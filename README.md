@@ -20,7 +20,7 @@ Open `http://localhost:5173` in your browser.
 
 | Feature | How |
 |---------|-----|
-| **Wake word** | "Hey Jarvis" — speaker verification, no false triggers |
+| **Wake word** | "Hey Vertha" — speaker verification, no false triggers |
 | **Voice in** | Groq Whisper — fast, accurate transcription |
 | **Voice out** | Piper TTS — neural voice, runs locally |
 | **Memory** | Vector search across your conversations |
