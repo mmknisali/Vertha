@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+dist/
+
+# Environment files (contain secrets)
+.env.local
+src/stt/.env.local
+src/tts/.env.local
+
+# Python venvs
+src/stt/.venv/
+src/tts/.venv/
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Logs
+src/stt/logs/
+src/tts/logs/
+*.log
+
+# Voice models (downloaded at runtime)
+src/tts/voices/*.onnx
+src/tts/voices/*.onnx.json
+
+# Speaker enrollments (user-specific)
+enrollments/
+pretrained_models/
+
+# Memory database and cache (user-specific)
+.local/share/vertha/
+
+# Spotify tokens (generated at runtime)
+src/tts/.tokens.json
+
+# devenv (Nix-based dev environment)
+.devenv/
+.devenv-profile
+.devenv-profile-auto/
+.gc/
+!/.devenv/gc/shell
+/.direnv/
+/result
+resultSymlinkData
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp

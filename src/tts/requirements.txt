@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+piper-tts
+python-dotenv
+duckduckgo-search
+httpx
+beautifulsoup4
+lxml
