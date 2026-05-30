@@ -95,10 +95,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: |
-            release/Vertha-*.AppImage
-            resources/stt-server/stt-server
-            resources/tts-server/tts-server
+          files: release/Vertha-*.AppImage
           draft: false
           generate_release_notes: true
 
@@ -139,10 +136,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: |
-            release/*.exe
-            resources/stt-server/stt-server.exe
-            resources/tts-server/tts-server.exe
+          files: release/*.exe
           draft: false
 
   build-mac:
@@ -182,8 +176,5 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: |
-            release/*.dmg
-            resources/stt-server/stt-server
-            resources/tts-server/tts-server
+          files: release/*.dmg
           draft: false
