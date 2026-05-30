@@ -4,6 +4,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -90,7 +93,7 @@ jobs:
         run: npx electron-builder --linux --publish never
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             release/Vertha-*.AppImage
@@ -134,7 +137,7 @@ jobs:
         run: npx electron-builder --win --publish never
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             release/*.exe
@@ -177,7 +180,7 @@ jobs:
         run: npx electron-builder --mac --publish never
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             release/*.dmg
