@@ -9,10 +9,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env.local')
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
+
+from websocket_manager import get_ws_manager
 
 from weather import router as weather_router
 from spotify import router as spotify_router
@@ -351,6 +353,7 @@ class StreamLLMRequest(BaseModel):
 async def start_task(req: TaskStartRequest):
     plan = req.plan
     task_engine = get_task_engine()
+    ws_manager = get_ws_manager()
 
     async def generate_sse():
         import json
@@ -372,6 +375,7 @@ async def start_task(req: TaskStartRequest):
                 "remaining": len(steps) - n
             }
             yield f"data: {json.dumps(data)}\n\n"
+            await ws_manager.broadcast({"type": "task_update", "kind": "step_start", **data})
 
             if req.execute_immediately and tool_name in ("bash_exec", "file_read", "file_write", "file_delete", "file_list", "file_exists"):
                 result = await tool_executor.execute(tool_name, tool_input)
@@ -386,6 +390,7 @@ async def start_task(req: TaskStartRequest):
                     "remaining": len(steps) - n
                 }
                 yield f"data: {json.dumps(data)}\n\n"
+                await ws_manager.broadcast({"type": "task_update", "kind": "step_update", **data})
             else:
                 data = {
                     "event": "step_update",
@@ -396,9 +401,11 @@ async def start_task(req: TaskStartRequest):
                     "remaining": len(steps) - n
                 }
                 yield f"data: {json.dumps(data)}\n\n"
+                await ws_manager.broadcast({"type": "task_update", "kind": "step_update", **data})
 
         data = {"event": "complete", "task_id": task_id}
         yield f"data: {json.dumps(data)}\n\n"
+        await ws_manager.broadcast({"type": "task_complete", "task_id": task_id})
 
     return StreamingResponse(
         generate_sse(),
@@ -428,6 +435,54 @@ async def get_task_history(limit: int = 10):
     engine = get_task_engine()
     history = engine.history[-limit:]
     return {"tasks": [t.to_dict() for t in history]}
+
+
+@app.websocket('/ws')
+async def websocket_endpoint(websocket: WebSocket):
+    client_id = websocket.query_params.get("client_id", "default")
+    ws_manager = get_ws_manager()
+
+    await websocket.accept()
+    await ws_manager.connect(websocket, client_id)
+    logger.info(f"WebSocket connected: {client_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await ws_manager.handle_incoming(data, client_id)
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected: {client_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        await ws_manager.disconnect(websocket, client_id)
+
+
+@app.websocket('/ws/broadcast')
+async def websocket_broadcast(websocket: WebSocket):
+    await websocket.accept()
+    client_id = "broadcast"
+    ws_manager = get_ws_manager()
+    await ws_manager.connect(websocket, client_id)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await ws_manager.handle_incoming(data, client_id)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket broadcast error: {e}")
+    finally:
+        await ws_manager.disconnect(websocket, client_id)
+
+
+async def ws_broadcast_task_update(event_type: str, data: dict):
+    ws_manager = get_ws_manager()
+    await ws_manager.broadcast({
+        "type": event_type,
+        "data": data,
+    })
 
 
 if __name__ == '__main__':

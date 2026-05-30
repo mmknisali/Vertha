@@ -11,6 +11,7 @@ import ThinkingIndicator from './components/ThinkingIndicator.jsx';
 import useSTT from './hooks/useSTT.js';
 import useTTS from './hooks/useTTS.js';
 import useWakeWord from './hooks/useWakeWord.js';
+import useWebSocket from './hooks/useWebSocket.js';
 
 const TTS_URL = import.meta.env.VITE_TTS_URL || 'http://localhost:8766';
 const LOCATION_LAT = import.meta.env.VITE_LOCATION_LAT || '37.0662';
@@ -190,6 +191,58 @@ export default function App() {
   const ttsRef = useRef(tts);
   sttRef.current = stt;
   ttsRef.current = tts;
+
+  const wsUrl = `${TTS_URL.replace('http', 'ws')}/ws`;
+  const ws = useWebSocket({
+    url: wsUrl,
+    autoConnect: true,
+    onMessage: (msg) => {
+      if (msg.type === 'task_update' || msg.type === 'task_complete') {
+        const { kind, step, tool, status: stepStatus, result, remaining, task_id } = msg;
+
+        if (kind === 'step_update' || kind === 'step_start') {
+          setActiveTask(prev => {
+            if (!prev) return prev;
+            const steps = [...(prev.steps || [])];
+            const stepIdx = steps.findIndex(s => s.n === step);
+            if (stepIdx >= 0) {
+              steps[stepIdx] = { ...steps[stepIdx], status: stepStatus, result };
+            } else if (step) {
+              steps.push({ n: step, tool: tool || '', label: `Step ${step}`, status: stepStatus, result });
+            }
+            steps.sort((a, b) => a.n - b.n);
+            const doneCount = steps.filter(s => s.status === 'done').length;
+            const progress = steps.length > 0 ? (doneCount / steps.length) * 100 : 0;
+            return { ...prev, steps, progress };
+          });
+
+          if (ttsRef.current) {
+            ttsRef.current.stop();
+          }
+        }
+
+        if (kind === 'step_start') {
+          setActiveTask(prev => {
+            if (!prev) return prev;
+            const steps = [...(prev.steps || [])];
+            if (!steps.find(s => s.n === step)) {
+              steps.push({ n: step, tool: tool || '', label: `Step ${step}`, status: 'running' });
+              steps.sort((a, b) => a.n - b.n);
+              return { ...prev, steps };
+            }
+            return prev;
+          });
+        }
+
+        if (msg.type === 'task_complete' || (kind === 'step_update' && remaining === 0)) {
+          setActiveTask(prev => prev ? { ...prev, status: 'success', progress: 100 } : null);
+        }
+      }
+    },
+    onError: (err) => {
+      console.error('WebSocket error:', err);
+    },
+  });
 
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
