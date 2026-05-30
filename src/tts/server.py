@@ -21,6 +21,10 @@ from memory.router import router as memory_router, get_session_id, set_session_i
 from memory.search import router as search_router
 from routers.pc_control import router as pc_router
 
+from task_engine import TaskEngine, get_task_engine, set_task_engine
+from stream_parser import StreamParser, strip_tags_for_tts
+from tool_executor import get_tool_executor
+
 from context import get_resolver, resolve_message, update_context
 from proactive import get_proactive_engine, check_proactive
 from task_queue import get_task_queue
@@ -151,6 +155,14 @@ async def lifespan(app):
         logger.info(f'Memory system initialized, session_id={current_session_id}')
     except Exception as e:
         logger.error(f'Memory system failed to initialize: {e}')
+
+    from memory.db import get_active_task
+    active_task = await get_active_task()
+    if active_task:
+        logger.info(f'Resuming incomplete task: {active_task["id"]}')
+
+    logger.info('Task engine initialized')
+
     yield
     sid = get_session_id()
     if sid:
@@ -323,6 +335,99 @@ async def execute_tasks(req: TaskExecuteRequest):
         media_type='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
     )
+
+
+class TaskStartRequest(BaseModel):
+    plan: dict
+    execute_immediately: bool = True
+
+
+class StreamLLMRequest(BaseModel):
+    messages: list[dict]
+    model: str = "big-pickle"
+
+
+@app.post('/tasks/start')
+async def start_task(req: TaskStartRequest):
+    plan = req.plan
+    task_engine = get_task_engine()
+
+    async def generate_sse():
+        import json
+        steps = plan.get("steps", [])
+        task_id = plan.get("task_id", "unknown")
+        tool_executor = get_tool_executor()
+
+        for step_data in steps:
+            n = step_data.get("n")
+            tool_name = step_data.get("tool", "bash_exec")
+            tool_input = step_data.get("input", {})
+            label = step_data.get("label", f"Step {n}")
+
+            data = {
+                "event": "step_start",
+                "step": n,
+                "tool": tool_name,
+                "label": label,
+                "remaining": len(steps) - n
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+
+            if req.execute_immediately and tool_name in ("bash_exec", "file_read", "file_write", "file_delete", "file_list", "file_exists"):
+                result = await tool_executor.execute(tool_name, tool_input)
+                status = "done" if result.get("success") else "error"
+                result_str = str(result.get("stdout") or result.get("error") or "")[:200]
+                data = {
+                    "event": "step_update",
+                    "step": n,
+                    "tool": tool_name,
+                    "status": status,
+                    "result": result_str,
+                    "remaining": len(steps) - n
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+            else:
+                data = {
+                    "event": "step_update",
+                    "step": n,
+                    "tool": tool_name,
+                    "status": "done",
+                    "result": "Simulated execution",
+                    "remaining": len(steps) - n
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+
+        data = {"event": "complete", "task_id": task_id}
+        yield f"data: {json.dumps(data)}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+    )
+
+
+@app.post('/tasks/abort')
+async def abort_task():
+    engine = get_task_engine()
+    engine.abort()
+    return {"success": True, "message": "Task abort requested"}
+
+
+@app.get('/tasks/current')
+async def get_current_task():
+    engine = get_task_engine()
+    current = engine.get_current()
+    if current:
+        return {"active": True, "task": current}
+    return {"active": False, "task": None}
+
+
+@app.get('/tasks/history')
+async def get_task_history(limit: int = 10):
+    engine = get_task_engine()
+    history = engine.history[-limit:]
+    return {"tasks": [t.to_dict() for t in history]}
 
 
 if __name__ == '__main__':

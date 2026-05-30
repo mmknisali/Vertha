@@ -31,6 +31,31 @@ CREATE TABLE IF NOT EXISTS pinned_memories (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     embedding_id TEXT
 );
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    goal TEXT NOT NULL,
+    steps_json TEXT NOT NULL,
+    total_steps INTEGER NOT NULL,
+    checkpoints TEXT,
+    rollback TEXT,
+    status TEXT DEFAULT 'running',
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME,
+    summary TEXT,
+    artifacts TEXT,
+    issues TEXT,
+    progress REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS task_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    step INTEGER NOT NULL,
+    state_json TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
 """
 
 
@@ -102,3 +127,92 @@ async def get_all_sessions():
             'SELECT id, started_at, summary FROM sessions ORDER BY started_at DESC'
         )
         return [{'id': r[0], 'started_at': r[1], 'summary': r[2]} for r in rows]
+
+
+async def save_task(task_id: str, goal: str, steps_json: str, total_steps: int, checkpoints: str = None, rollback: str = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            '''INSERT OR REPLACE INTO tasks (id, goal, steps_json, total_steps, checkpoints, rollback, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'running')''',
+            (task_id, goal, steps_json, total_steps, checkpoints, rollback)
+        )
+        await db.commit()
+
+
+async def update_task_step(task_id: str, step: int, state_json: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            'INSERT INTO task_snapshots (task_id, step, state_json) VALUES (?, ?, ?)',
+            (task_id, step, state_json)
+        )
+        await db.commit()
+
+
+async def update_task_progress(task_id: str, progress: float, status: str = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        if status:
+            await db.execute(
+                'UPDATE tasks SET progress = ?, status = ? WHERE id = ?',
+                (progress, status, task_id)
+            )
+        else:
+            await db.execute(
+                'UPDATE tasks SET progress = ? WHERE id = ?',
+                (progress, task_id)
+            )
+        await db.commit()
+
+
+async def complete_task(task_id: str, status: str, summary: str = None, artifacts: str = None, issues: str = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            '''UPDATE tasks SET status = ?, summary = ?, artifacts = ?, issues = ?,
+               finished_at = CURRENT_TIMESTAMP WHERE id = ?''',
+            (status, summary, artifacts, issues, task_id)
+        )
+        await db.commit()
+
+
+async def get_task(task_id: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await db.execute_fetchall(
+            'SELECT * FROM tasks WHERE id = ?', (task_id,)
+        )
+        if not row:
+            return None
+        r = row[0]
+        return {
+            'id': r[0], 'goal': r[1], 'steps_json': r[2], 'total_steps': r[3],
+            'checkpoints': r[4], 'rollback': r[5], 'status': r[6],
+            'started_at': r[7], 'finished_at': r[8], 'summary': r[9],
+            'artifacts': r[10], 'issues': r[11], 'progress': r[12],
+        }
+
+
+async def get_active_task():
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await db.execute_fetchall(
+            "SELECT * FROM tasks WHERE status = 'running' ORDER BY started_at DESC LIMIT 1"
+        )
+        if not row:
+            return None
+        r = row[0]
+        return {
+            'id': r[0], 'goal': r[1], 'steps_json': r[2], 'total_steps': r[3],
+            'checkpoints': r[4], 'rollback': r[5], 'status': r[6],
+            'started_at': r[7], 'finished_at': r[8], 'summary': r[9],
+            'artifacts': r[10], 'issues': r[11], 'progress': r[12],
+        }
+
+
+async def get_task_history(limit: int = 10):
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(
+            '''SELECT id, goal, status, started_at, finished_at, summary, progress
+               FROM tasks ORDER BY started_at DESC LIMIT ?''',
+            (limit,)
+        )
+        return [{
+            'id': r[0], 'goal': r[1], 'status': r[2],
+            'started_at': r[3], 'finished_at': r[4], 'summary': r[5], 'progress': r[6]
+        } for r in rows]

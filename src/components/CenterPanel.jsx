@@ -17,6 +17,7 @@ export default function CenterPanel({
   messages,
   analyser,
   onManualTrigger,
+  taskProgress,
 }) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.monitoring;
 
@@ -36,7 +37,7 @@ export default function CenterPanel({
           }}
         />
         <div className="relative" style={{ width: 300, height: 300 }}>
-          <Orb status={status} interimText={interimText} />
+          <Orb status={status} interimText={interimText} taskProgress={taskProgress} />
           <FrequencyVisualizer analyser={analyser} isActive={status === 'listening'} />
         </div>
       </div>

@@ -5,6 +5,9 @@ import CenterPanel from './components/CenterPanel.jsx';
 import RightPanel from './components/RightPanel.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
 import ConfirmationToast from './components/ConfirmationToast.jsx';
+import TaskProgress from './components/TaskProgress.jsx';
+import TaskHUD from './components/TaskHUD.jsx';
+import ThinkingIndicator from './components/ThinkingIndicator.jsx';
 import useSTT from './hooks/useSTT.js';
 import useTTS from './hooks/useTTS.js';
 import useWakeWord from './hooks/useWakeWord.js';
@@ -32,9 +35,14 @@ const MEMORY_TOOLS = [
   { type: 'function', function: { name: 'screenshot', description: 'Take a screenshot and save to /tmp/vertha_ss.png', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Save path (default /tmp/vertha_ss.png)' } } } } },
   { type: 'function', function: { name: 'set_volume', description: 'Set the system volume level.', parameters: { type: 'object', properties: { level: { type: 'integer', description: 'Volume level 0-100' } }, required: ['level'] } } },
   { type: 'function', function: { name: 'lock_screen', description: 'Lock the screen to require password.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'run_command', description: 'Run an arbitrary shell command. Requires explicit confirmation. DANGEROUS.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The shell command to execute' } }, required: ['command'] } } },
-  { type: 'function', function: { name: 'delete_file', description: 'Delete a file. Requires explicit confirmation. DANGEROUS.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file to delete' } }, required: ['path'] } } },
-  { type: 'function', function: { name: 'kill_process', description: 'Kill a process by name. Requires explicit confirmation. DANGEROUS.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Process name to kill' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'run_command', description: 'Run an arbitrary shell command. DANGEROUS - requires explicit user confirmation.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The shell command to execute' } }, required: ['command'] } } },
+  { type: 'function', function: { name: 'delete_file', description: 'Delete a file. DANGEROUS - requires explicit user confirmation.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file to delete' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'kill_process', description: 'Kill a process by name. DANGEROUS - requires explicit user confirmation.', parameters: { type: 'object', properties: { name: { type: 'string', description: 'Process name to kill' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'bash_exec', description: 'Execute a shell command and return the output. Use for git, npm, python, file operations, etc.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The shell command to run' }, cwd: { type: 'string', description: 'Working directory (optional, defaults to user home)' }, timeout: { type: 'integer', description: 'Timeout in seconds (default 30, max 120)' } }, required: ['command'] } } },
+  { type: 'function', function: { name: 'file_read', description: 'Read the contents of a file.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file' }, binary: { type: 'boolean', description: 'Read as binary/base64 (default false)' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'file_write', description: 'Write content to a file, creating parent directories if needed.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file' }, content: { type: 'string', description: 'Content to write' }, encoding: { type: 'string', description: 'Encoding: utf-8 or base64 (default utf-8)' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'file_delete', description: 'Delete a file or directory.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to delete' }, force: { type: 'boolean', description: 'Force delete directories (default false)' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'file_list', description: 'List contents of a directory.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path (default current dir)' } } } } },
 ];
 
 const SYSTEM_PROMPT = `You are V.E.R.T.H.A. — Voice Enabled Reasoning and Task Handling Assistant. A personal AI built for one person.
@@ -70,10 +78,45 @@ const SYSTEM_PROMPT = `You are V.E.R.T.H.A. — Voice Enabled Reasoning and Task
 - For multi-step tasks: execute and narrate as you go
 - For destructive actions (delete, send, run command): always confirm first — "Shall I go ahead, sir?"
 
+## Agentic Task Engine (ATE)
+When the user requests a complex task (4+ steps), you MUST use the ATE markers to plan and track progress:
+
+Plan the task like this BEFORE executing:
+<vertha:task_plan id="task_XXXX" total_steps="N">
+GOAL: [what we're trying to accomplish - the end state]
+STEPS:
+  [01] first step description — tool: tool_name
+  [02] second step description — tool: tool_name
+  [03] third step description — tool: tool_name
+  ...
+CHECKPOINTS: [step numbers that need verification, e.g. 5,10]
+ROLLBACK: [how to undo on failure - e.g. "git checkout && rm created_files"]
+</vertha:task_plan>
+
+After completing each step:
+<vertha:step n="1" status="done" result="what happened"/>
+
+On error (retry up to 3 times):
+<vertha:step n="2" status="error" reason="what failed"/>
+
+When the task is complete:
+<vertha:task_complete id="task_XXXX" status="success">
+SUMMARY: what was accomplished
+ARTIFACTS: files created, commands run, etc.
+ISSUES: anything that didn't go perfectly
+</vertha:task_complete>
+
+## Available Tools
+- bash_exec: Run shell commands (timeout 30s, cwd is user's home)
+- file_read: Read file contents (path required)
+- file_write: Write content to file (path and content required)
+- file_delete: Delete file (path required, blocked on system dirs)
+- file_list: List directory contents (path defaults to .)
+
 ## What you never do
 - Never make up information — search or say you don't know
 - Never expose API keys, file paths, or system details
-- Never execute shell commands without explicit confirmation
+- Never execute shell commands without explicit confirmation (unless running a file operation tool)
 - Never read out raw JSON, URLs, or code unless asked
 
 ## PC Control
@@ -103,6 +146,7 @@ export default function App() {
   const [memoryCount, setMemoryCount] = useState(0);
   const [activeTools, setActiveTools] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [activeTask, setActiveTask] = useState(null);
   const [spotify, setSpotify] = useState(null);
   const [weather, setWeather] = useState(null);
   const [confirmationToast, setConfirmationToast] = useState(null);
@@ -266,6 +310,80 @@ export default function App() {
     setInterimText('');
   };
 
+  const parseTaskPlan = (text) => {
+    const planMatch = text.match(/<vertha:task_plan([^>]*)>([\s\S]*?)<\/vertha:task_plan>/);
+    if (!planMatch) return null;
+
+    const attrs = {};
+    const attrsStr = planMatch[1];
+    const body = planMatch[2];
+
+    const idMatch = attrsStr.match(/id="([^"]*)"/);
+    const totalMatch = attrsStr.match(/total_steps="([^"]*)"/);
+    if (idMatch) attrs.id = idMatch[1];
+    if (totalMatch) attrs.total_steps = parseInt(totalMatch[1], 10);
+
+    const lines = body.split('\n');
+    const steps = [];
+    let goal = '';
+    let checkpoints = [];
+    let rollback = '';
+
+    const stepRe = /\[?\s*0*(\d+)\s*\]?[\s.\-:]+(.+?)(?:\s+--\s+tool:\s*(\S+))?\s*$/;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.toUpperCase().startsWith('GOAL:')) {
+        goal = trimmed.slice(5).trim();
+      } else if (trimmed.toUpperCase().startsWith('CHECKPOINTS:')) {
+        const ckptStr = trimmed.slice(12).trim();
+        checkpoints = ckptStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      } else if (trimmed.toUpperCase().startsWith('ROLLBACK:')) {
+        rollback = trimmed.slice(9).trim();
+      } else {
+        const match = trimmed.match(stepRe);
+        if (match) {
+          steps.push({
+            n: parseInt(match[1], 10),
+            label: match[2].trim(),
+            tool: match[3] || 'bash_exec',
+          });
+        }
+      }
+    }
+
+    return { ...attrs, goal, steps, checkpoints, rollback };
+  };
+
+  const parseSteps = (text) => {
+    const steps = [];
+    const stepRe = /<vertha:step([^>]*)\/?>/g;
+    let match;
+    while ((match = stepRe.exec(text)) !== null) {
+      const attrs = {};
+      const attrsStr = match[1];
+      const nMatch = attrsStr.match(/n="([^"]*)"/);
+      const statusMatch = attrsStr.match(/status="([^"]*)"/);
+      const resultMatch = attrsStr.match(/result="([^"]*)"/);
+      const reasonMatch = attrsStr.match(/reason="([^"]*)"/);
+      if (nMatch) attrs.n = parseInt(nMatch[1], 10);
+      if (statusMatch) attrs.status = statusMatch[1];
+      if (resultMatch) attrs.result = resultMatch[1];
+      if (reasonMatch) attrs.reason = reasonMatch[1];
+      if (attrs.n) steps.push(attrs);
+    }
+    return steps;
+  };
+
+  const stripVerthaTags = (text) => {
+    return text
+      .replace(/<vertha:task_plan[^>]*>[\s\S]*?<\/vertha:task_plan>/g, '')
+      .replace(/<vertha:step[^>]*\/?>/g, '')
+      .replace(/<vertha:task_complete[^>]*>[\s\S]*?<\/vertha:task_complete>/g, '')
+      .replace(/<vertha:think>[\s\S]*?<\/vertha:think>/g, '')
+      .trim();
+  };
+
   const callAI = async (userText) => {
     if (!snap.current.apiKey) {
       setStatus('error');
@@ -317,7 +435,12 @@ export default function App() {
       let text = data.choices?.[0]?.message?.content;
       const toolCalls = data.choices?.[0]?.message?.tool_calls || [];
 
-      if (toolCalls?.length > 1) {
+      const plan = parseTaskPlan(text || '');
+      if (plan) {
+        const cleanText = stripVerthaTags(text);
+        text = cleanText || 'Executing task, sir.';
+        await handleATE(plan);
+      } else if (toolCalls?.length > 1) {
         await handleMultiStepTasks(toolCalls);
         text = 'Several tasks handled, sir.';
       } else if (toolCalls?.length === 1) {
@@ -347,6 +470,80 @@ export default function App() {
       setErrorMsg(err.message);
       setActiveTools((prev) => prev.filter((t) => t !== 'BIG PICKLE'));
     }
+  };
+
+  const handleATE = async (plan) => {
+    const taskData = {
+      task_id: plan.id || `task_${Date.now()}`,
+      goal: plan.goal,
+      steps: plan.steps,
+      checkpoints: plan.checkpoints || [],
+      rollback: plan.rollback || '',
+      status: 'running',
+      progress: 0,
+      elapsed: 0,
+    };
+
+    setActiveTask(taskData);
+
+    try {
+      const res = await fetch(`${TTS_URL}/tasks/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: taskData, execute_immediately: true }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.event === 'step_update' || data.event === 'step_start') {
+                setActiveTask(prev => {
+                  if (!prev) return prev;
+                  const steps = [...(prev.steps || [])];
+                  const stepIdx = steps.findIndex(s => s.n === data.step);
+                  if (stepIdx >= 0) {
+                    steps[stepIdx] = { ...steps[stepIdx], status: data.status, result: data.result };
+                  } else {
+                    steps.push({ n: data.step, label: data.label, tool: data.tool, status: data.status, result: data.result });
+                  }
+                  const doneCount = steps.filter(s => s.status === 'done').length;
+                  const progress = steps.length > 0 ? (doneCount / steps.length) * 100 : 0;
+                  return { ...prev, steps, progress };
+                });
+
+                if (snap.current.status === 'speaking') {
+                  ttsRef.current.stop();
+                  await new Promise(r => setTimeout(r, 200));
+                }
+              }
+              if (data.event === 'complete') {
+                setActiveTask(prev => prev ? { ...prev, status: 'success', progress: 100 } : null);
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (err) {
+      setErrorMsg(`Task error: ${err.message}`);
+      setActiveTask(prev => prev ? { ...prev, status: 'failed' } : null);
+    }
+  };
+
+  const abortTask = async () => {
+    try {
+      await fetch(`${TTS_URL}/tasks/abort`, { method: 'POST' });
+    } catch (_) {}
+    setActiveTask(prev => prev ? { ...prev, status: 'failed' } : null);
   };
 
   const handleMultiStepTasks = async (toolCalls) => {
@@ -603,6 +800,7 @@ export default function App() {
         analyser={analyserRef.current}
         onManualTrigger={manualTrigger}
         emotion={emotion}
+        taskProgress={activeTask?.progress}
       />
 
       <RightPanel
@@ -610,6 +808,15 @@ export default function App() {
         spotify={spotify}
         tasks={tasks}
       />
+
+      {activeTask && (
+        <div
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40"
+          style={{ width: 500 }}
+        >
+          <TaskHUD task={activeTask} onAbort={abortTask} />
+        </div>
+      )}
 
       <SettingsDrawer
         isOpen={showSettings}
