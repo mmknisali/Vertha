@@ -4,6 +4,7 @@ import wave
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
+import argparse
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Request
@@ -12,12 +13,18 @@ from fastapi.responses import JSONResponse
 
 load_dotenv(Path(__file__).parent / '.env.local')
 
+parser = argparse.ArgumentParser(description='Vertha STT Server')
+parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8765)))
+args = parser.parse_args()
+
 STD6_PATH = os.getenv('STD6_PATH', '/nix/store/chqq8mpmpyfi9kgsngya71akv5xicn03-gcc-15.2.0-lib/lib/libstdc++.so.6.0.34')
 LIBZ_PATH = os.getenv('LIBZ_PATH', '')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'whisper-large-v3-turbo')
 GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
+
+ENROLLMENT_DIR = os.getenv('ENROLLMENT_DIR', Path(__file__).parent / 'enrollments')
 
 LOG_DIR = Path(__file__).parent / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
@@ -231,4 +238,4 @@ async def transcribe(file: UploadFile = File(...)):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8765, log_level='info')
+    uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='info')

@@ -1,0 +1,186 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create resource directories
+        run: |
+          mkdir -p resources/stt-server/build
+          mkdir -p resources/tts-server/build
+
+      - name: Build STT binary
+        run: |
+          pip install pyinstaller --quiet
+          pip install -r src/stt/requirements.txt --quiet
+          pyinstaller \
+            --onefile \
+            --name stt-server \
+            --distpath resources/stt-server \
+            --workpath resources/stt-server/build \
+            --specpath resources/stt-server \
+            --hidden-import=fastapi \
+            --hidden-import=uvicorn \
+            --hidden-import=uvicorn.logging \
+            --hidden-import=uvicorn.protocols \
+            --hidden-import=uvicorn.protocols.http \
+            --hidden-import=uvicorn.protocols.http.auto \
+            --hidden-import=uvicorn.lifespan \
+            --hidden-import=uvicorn.lifespan.server \
+            --hidden-import=httpx \
+            --hidden-import=speechbrain \
+            --hidden-import=speechbrain.inference \
+            --hidden-import=speechbrain.inference.encoders \
+            --hidden-import=speechbrain.models \
+            --hidden-import=silero_vad \
+            --hidden-import=torch \
+            --hidden-import=numpy \
+            src/stt/server.py
+        shell: bash
+
+      - name: Build TTS binary
+        run: |
+          pip install pyinstaller --quiet
+          pip install -r src/tts/requirements.txt --quiet
+          pyinstaller \
+            --onefile \
+            --name tts-server \
+            --distpath resources/tts-server \
+            --workpath resources/tts-server/build \
+            --specpath resources/tts-server \
+            --hidden-import=fastapi \
+            --hidden-import=uvicorn \
+            --hidden-import=uvicorn.logging \
+            --hidden-import=uvicorn.protocols \
+            --hidden-import=uvicorn.protocols.http \
+            --hidden-import=uvicorn.protocols.http.auto \
+            --hidden-import=uvicorn.lifespan \
+            --hidden-import=uvicorn.lifespan.server \
+            --hidden-import=httpx \
+            --hidden-import=websockets \
+            --hidden-import=websockets.client \
+            --hidden-import=websockets.server \
+            --hidden-import=piper \
+            --hidden-import=numpy \
+            --collect-all=piper \
+            src/tts/server.py
+        shell: bash
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Electron app
+        run: npx electron-builder --linux --publish never
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/Vertha-*.AppImage
+            resources/stt-server/stt-server
+            resources/tts-server/tts-server
+          draft: false
+          generate_release_notes: true
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build STT binary
+        run: |
+          python -m pip install pyinstaller
+          python -m pip install -r src/stt/requirements.txt
+          python -m PyInstaller --onefile --name stt-server --distpath resources/stt-server --workpath resources/stt-server/build --specpath resources/stt-server src/stt/server.py
+
+      - name: Build TTS binary
+        run: |
+          python -m pip install pyinstaller
+          python -m pip install -r src/tts/requirements.txt
+          python -m PyInstaller --onefile --name tts-server --distpath resources/tts-server --workpath resources/tts-server/build --specpath resources/tts-server src/tts/server.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Electron app
+        run: npx electron-builder --win --publish never
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            resources/stt-server/stt-server.exe
+            resources/tts-server/tts-server.exe
+          draft: false
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build STT binary
+        run: |
+          python3 -m pip install pyinstaller
+          python3 -m pip install -r src/stt/requirements.txt
+          python3 -m PyInstaller --onefile --name stt-server --distpath resources/stt-server --workpath resources/stt-server/build --specpath resources/stt-server src/stt/server.py
+
+      - name: Build TTS binary
+        run: |
+          python3 -m pip install pyinstaller
+          python3 -m pip install -r src/tts/requirements.txt
+          python3 -m PyInstaller --onefile --name tts-server --distpath resources/tts-server --workpath resources/tts-server/build --specpath resources/tts-server src/tts/server.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Electron app
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            resources/stt-server/stt-server
+            resources/tts-server/tts-server
+          draft: false

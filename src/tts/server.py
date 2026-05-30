@@ -3,11 +3,16 @@ import logging
 import os
 import re
 import wave
+import argparse
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / '.env.local')
+
+parser = argparse.ArgumentParser(description='Vertha TTS Server')
+parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8766)))
+args = parser.parse_args()
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +38,7 @@ from task_queue import get_task_queue
 from conversation import get_conversation_manager, detect_emotion, build_messages
 
 PIPER_VOICE_PATH = os.getenv('PIPER_VOICE', '')
+PIPER_VOICE_DIR = os.getenv('PIPER_VOICE_DIR', str(Path(__file__).parent))
 
 LOG_DIR = Path(__file__).parent / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
@@ -487,4 +493,4 @@ async def ws_broadcast_task_update(event_type: str, data: dict):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8766, log_level='info')
+    uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='info')

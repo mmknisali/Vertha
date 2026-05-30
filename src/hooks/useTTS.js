@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
-const TTS_URL = import.meta.env.VITE_TTS_URL || 'http://localhost:8766';
+import { getTtsUrl } from '../utils/config.js';
 
 function cleanTextForSpeech(text) {
   return text
@@ -17,6 +17,7 @@ function cleanTextForSpeech(text) {
 
 export default function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsUrl, setTtsUrl] = useState('http://localhost:8766');
   const audioRef = useRef(null);
   const queueRef = useRef([]);
   const isPlayingRef = useRef(false);
@@ -25,6 +26,14 @@ export default function useTTS() {
   const onErrorRef = useRef(null);
   const audioCtxRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    async function initTtsUrl() {
+      const url = await getTtsUrl();
+      setTtsUrl(url);
+    }
+    initTtsUrl();
+  }, []);
 
   const getAudioCtx = useCallback(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -124,7 +133,7 @@ export default function useTTS() {
     try {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      const res = await fetch(`${TTS_URL}/speak`, {
+      const res = await fetch(`${ttsUrl}/speak`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: cleanedText }),

@@ -13,7 +13,7 @@ src/tts/.venv/
 __pycache__/
 *.py[cod]
 *.pyc
-
+./.venv
 # Logs
 src/stt/logs/
 src/tts/logs/
@@ -48,3 +48,4 @@ resultSymlinkData
 .vscode/
 .DS_Store
 *.swp
+.venv

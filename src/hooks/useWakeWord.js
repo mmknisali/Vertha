@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const STT_BASE = import.meta.env.VITE_STT_URL || 'http://localhost:8765';
-const WAKEWORD_URL = `${STT_BASE}/wakeword`;
+import { getSttUrl } from '../utils/config.js';
+
 const TARGET_SAMPLE_RATE = 16000;
 const CHUNK_MS = 1000;
 
 export default function useWakeWord({ onWakeWord, enabled = true }) {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState(null);
+  const [sttUrl, setSttUrl] = useState('http://localhost:8765');
+  const [wakewordUrl, setWakewordUrl] = useState(null);
 
   const ref = useRef({
     stream: null,
@@ -17,6 +19,15 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
     pcmBuffer: [],
     mediaStreamSource: null,
   });
+
+  useEffect(() => {
+    async function initSttUrl() {
+      const url = await getSttUrl();
+      setSttUrl(url);
+      setWakewordUrl(`${url}/wakeword`);
+    }
+    initSttUrl();
+  }, []);
 
   const cleanup = useCallback(() => {
     const r = ref.current;
@@ -106,7 +117,7 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
         const wavBuffer = encodeWAV(samples, TARGET_SAMPLE_RATE);
 
         try {
-          const response = await fetch(WAKEWORD_URL, {
+          const response = await fetch(wakewordUrl || 'http://localhost:8765/wakeword', {
             method: 'POST',
             body: wavBuffer,
             headers: { 'Content-Type': 'audio/wav' },

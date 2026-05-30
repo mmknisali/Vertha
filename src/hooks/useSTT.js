@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const STT_BASE = import.meta.env.VITE_STT_URL || 'http://localhost:8765';
-const TRANSCRIBE_URL = `${STT_BASE}/transcribe`;
+import { getSttUrl } from '../utils/config.js';
 
 const SILENCE_THRESHOLD = parseInt(import.meta.env.VITE_SILENCE_THRESHOLD || '10', 10) || 10;
 const SILENCE_DURATION = parseInt(import.meta.env.VITE_SILENCE_DURATION || '1500', 10) || 1500;
@@ -26,11 +25,22 @@ export default function useSTT({ onTranscript, onError }) {
   const [status, setStatus] = useState('monitoring');
   const [interimVolume, setInterimVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
+  const [sttUrl, setSttUrl] = useState('http://localhost:8765');
+  const [transcribeUrl, setTranscribeUrl] = useState(null);
 
   const configRef = useRef({ onTranscript, onError });
   useEffect(() => {
     configRef.current = { onTranscript, onError };
   }, [onTranscript, onError]);
+
+  useEffect(() => {
+    async function initSttUrl() {
+      const url = await getSttUrl();
+      setSttUrl(url);
+      setTranscribeUrl(`${url}/transcribe`);
+    }
+    initSttUrl();
+  }, []);
 
   const ref = useRef({
     stream: null,
@@ -140,11 +150,12 @@ export default function useSTT({ onTranscript, onError }) {
   const transcribe = useCallback(async (blob) => {
     const fd = new FormData();
     fd.append('file', blob, 'audio.webm');
-    const res = await fetch(TRANSCRIBE_URL, { method: 'POST', body: fd });
+    const url = transcribeUrl || 'http://localhost:8765/transcribe';
+    const res = await fetch(url, { method: 'POST', body: fd });
     if (!res.ok) throw new Error(`STT ${res.status}`);
     const data = await res.json();
     return (data.text || '').trim();
-  }, []);
+  }, [transcribeUrl]);
 
   const startVolumeMonitoring = useCallback(() => {
     const r = ref.current;

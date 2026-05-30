@@ -12,11 +12,7 @@ import useSTT from './hooks/useSTT.js';
 import useTTS from './hooks/useTTS.js';
 import useWakeWord from './hooks/useWakeWord.js';
 import useWebSocket from './hooks/useWebSocket.js';
-
-const TTS_URL = import.meta.env.VITE_TTS_URL || 'http://localhost:8766';
-const LOCATION_LAT = import.meta.env.VITE_LOCATION_LAT || '37.0662';
-const LOCATION_LON = import.meta.env.VITE_LOCATION_LON || '37.3833';
-const PODCAST_SHOW_URI = import.meta.env.VITE_PODCAST_SHOW_URI || '';
+import { getConfig, getSttUrl, getTtsUrl, isElectron } from './utils/config.js';
 
 const MEMORY_TOOLS = [
   { type: 'function', function: { name: 'pin_memory', description: 'Permanently remember an important fact about the user.', parameters: { type: 'object', properties: { content: { type: 'string' }, source: { type: 'string' } }, required: ['content'] } } },
@@ -134,7 +130,7 @@ const EMOTION_COLORS = {
 
 export default function App() {
   const [status, setStatus] = useState('monitoring');
-  const [apiKey, setApiKey] = useState(import.meta.env.VITE_ZEN_API_KEY || '');
+  const [apiKey, setApiKey] = useState('');
   const [wakeWord, setWakeWord] = useState('Hey Vertha');
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [interimText, setInterimText] = useState('');
@@ -152,9 +148,9 @@ export default function App() {
   const [weather, setWeather] = useState(null);
   const [confirmationToast, setConfirmationToast] = useState(null);
 
-  const [locationLat, setLocationLat] = useState(LOCATION_LAT);
-  const [locationLon, setLocationLon] = useState(LOCATION_LON);
-  const [podcastUri, setPodcastUri] = useState(PODCAST_SHOW_URI);
+  const [locationLat, setLocationLat] = useState('37.0662');
+  const [locationLon, setLocationLon] = useState('37.3833');
+  const [podcastUri, setPodcastUri] = useState('');
   const [pcControl, setPcControl] = useState(() => localStorage.getItem('vertha_pcControl') === 'true');
   const [dangerousTier, setDangerousTier] = useState(() => localStorage.getItem('vertha_dangerousTier') === 'true');
 
@@ -165,7 +161,22 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('vertha_dangerousTier', dangerousTier);
   }, [dangerousTier]);
+
   const [proactiveSuggestions, setProactiveSuggestions] = useState(true);
+  const [ttsUrl, setTtsUrl] = useState('http://localhost:8766');
+
+  useEffect(() => {
+    async function initConfig() {
+      const config = await getConfig();
+      setApiKey(config.zenApiKey || '');
+      setLocationLat(config.locationLat || '37.0662');
+      setLocationLon(config.locationLon || '37.3833');
+      setPodcastUri(config.podcastShowUri || '');
+      const url = await getTtsUrl();
+      setTtsUrl(url);
+    }
+    initConfig();
+  }, []);
 
   const wakeWordHook = useWakeWord({
     enabled: status === 'monitoring',
@@ -192,7 +203,7 @@ export default function App() {
   sttRef.current = stt;
   ttsRef.current = tts;
 
-  const wsUrl = `${TTS_URL.replace('http', 'ws')}/ws`;
+  const wsUrl = `${ttsUrl.replace('http', 'ws')}/ws`;
   const ws = useWebSocket({
     url: wsUrl,
     autoConnect: true,
@@ -291,7 +302,7 @@ export default function App() {
     const interval = setInterval(async () => {
       if (snap.current.status !== 'monitoring' && snap.current.status !== 'speaking') return;
       try {
-        const res = await fetch(`${TTS_URL}/proactive/check`);
+        const res = await fetch(`${ttsUrl}/proactive/check`);
         if (res.ok) {
           const data = await res.json();
           if (data.suggestion && snap.current.status === 'monitoring') {
@@ -308,14 +319,14 @@ export default function App() {
 
   const fetchWeather = async () => {
     try {
-      const res = await fetch(`${TTS_URL}/weather?lat=${locationLat}&lon=${locationLon}`);
+      const res = await fetch(`${ttsUrl}/weather?lat=${locationLat}&lon=${locationLon}`);
       if (res.ok) setWeather(await res.json());
     } catch (_) {}
   };
 
   const fetchMemoryStats = async () => {
     try {
-      const res = await fetch(`${TTS_URL}/memory/stats`);
+      const res = await fetch(`${ttsUrl}/memory/stats`);
       if (res.ok) {
         const data = await res.json();
         setMemoryCount(data.count || 0);
@@ -326,7 +337,7 @@ export default function App() {
 
   const resolveContext = async (message, history) => {
     try {
-      const res = await fetch(`${TTS_URL}/context/resolve`, {
+      const res = await fetch(`${ttsUrl}/context/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, history }),
@@ -341,7 +352,7 @@ export default function App() {
 
   const detectEmotion = async (message) => {
     try {
-      const res = await fetch(`${TTS_URL}/conversation/emotion`, {
+      const res = await fetch(`${ttsUrl}/conversation/emotion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
@@ -540,7 +551,7 @@ export default function App() {
     setActiveTask(taskData);
 
     try {
-      const res = await fetch(`${TTS_URL}/tasks/start`, {
+      const res = await fetch(`${ttsUrl}/tasks/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: taskData, execute_immediately: true }),
@@ -594,7 +605,7 @@ export default function App() {
 
   const abortTask = async () => {
     try {
-      await fetch(`${TTS_URL}/tasks/abort`, { method: 'POST' });
+      await fetch(`${ttsUrl}/tasks/abort`, { method: 'POST' });
     } catch (_) {}
     setActiveTask(prev => prev ? { ...prev, status: 'failed' } : null);
   };
@@ -614,7 +625,7 @@ export default function App() {
     })));
 
     try {
-      const res = await fetch(`${TTS_URL}/tasks/execute`, {
+      const res = await fetch(`${ttsUrl}/tasks/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tool_calls: tasks_payload }),
@@ -654,7 +665,7 @@ export default function App() {
 
   const getMemoryContext = async (query) => {
     try {
-      const res = await fetch(`${TTS_URL}/memory/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, limit: 5 }) });
+      const res = await fetch(`${ttsUrl}/memory/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, limit: 5 }) });
       if (res.ok) return await res.json();
     } catch (_) {}
     return null;
@@ -662,7 +673,7 @@ export default function App() {
 
   const saveToMemory = async (role, content) => {
     try {
-      await fetch(`${TTS_URL}/memory/message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, content }) });
+      await fetch(`${ttsUrl}/memory/message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, content }) });
     } catch (_) {}
   };
 
@@ -672,13 +683,13 @@ export default function App() {
     setActiveTools((prev) => [...prev, name.toUpperCase()]);
 
     if (name === 'pin_memory') {
-      await fetch(`${TTS_URL}/memory/pin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: parsedArgs.content, source: parsedArgs.source || 'user' }) });
+      await fetch(`${ttsUrl}/memory/pin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: parsedArgs.content, source: parsedArgs.source || 'user' }) });
       await fetchMemoryStats();
       setActiveTools((prev) => prev.filter((t) => t !== 'PIN_MEMORY'));
       return 'Noted sir, I\'ll remember that.';
     }
     if (name === 'search_memory') {
-      const res = await fetch(`${TTS_URL}/memory/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: parsedArgs.query, limit: 5 }) });
+      const res = await fetch(`${ttsUrl}/memory/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: parsedArgs.query, limit: 5 }) });
       if (res.ok) {
         const data = await res.json();
         const pinned = data.pinned || [];
@@ -690,7 +701,7 @@ export default function App() {
     }
     if (name === 'web_search') {
       setActiveTools((prev) => [...prev, 'WEB SEARCH']);
-      const res = await fetch(`${TTS_URL}/search/intelligent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: parsedArgs.question }) });
+      const res = await fetch(`${ttsUrl}/search/intelligent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: parsedArgs.question }) });
       setActiveTools((prev) => prev.filter((t) => t !== 'WEB SEARCH'));
       if (res.ok) {
         const data = await res.json();
@@ -705,7 +716,7 @@ export default function App() {
         return "PC control is disabled. Enable it in settings first, sir.";
       }
       try {
-        const res = await fetch(`${TTS_URL}/pc/execute`, {
+        const res = await fetch(`${ttsUrl}/pc/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tool: name, input: parsedArgs, session_id: 'default', dangerous_tier: dangerousTier })
@@ -899,7 +910,7 @@ export default function App() {
         onConfirm={async () => {
           if (confirmationToast?.confirm_id) {
             try {
-              const res = await fetch(`${TTS_URL}/pc/confirm/${confirmationToast.confirm_id}`, {
+              const res = await fetch(`${ttsUrl}/pc/confirm/${confirmationToast.confirm_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
               });
@@ -920,7 +931,7 @@ export default function App() {
         onCancel={async () => {
           if (confirmationToast?.confirm_id) {
             try {
-              await fetch(`${TTS_URL}/pc/confirm/${confirmationToast.confirm_id}`, {
+              await fetch(`${ttsUrl}/pc/confirm/${confirmationToast.confirm_id}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
               });
