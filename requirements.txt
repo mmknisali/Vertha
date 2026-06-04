@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-multipart
+httpx
+python-dotenv
+piper-tts
+duckduckgo-search
+beautifulsoup4
+lxml
+numpy
+torch
+silero_vad
+speechbrain
+aiosqlite
+chromadb
+sentence-transformers

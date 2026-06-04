@@ -4,7 +4,7 @@ import re
 import asyncio
 from pathlib import Path
 
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from httpx import AsyncClient

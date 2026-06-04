@@ -14,15 +14,15 @@ echo "Output: $DIST_DIR"
 mkdir -p "$DIST_DIR"
 mkdir -p "$BUILD_DIR"
 
-cd "$SRC_DIR"
+  cd "$SRC_DIR"
 
-if [ ! -f "requirements.txt" ]; then
-    echo "ERROR: requirements.txt not found in $SRC_DIR"
+  if [ ! -f "$PROJECT_ROOT/requirements.txt" ]; then
+    echo "ERROR: requirements.txt not found in $PROJECT_ROOT"
     exit 1
-fi
+  fi
 
-echo "Installing dependencies..."
-pip install -r requirements.txt pyinstaller --quiet
+  echo "Installing dependencies..."
+  pip install -r "$PROJECT_ROOT/requirements.txt" pyinstaller --quiet
 
 echo "Running PyInstaller..."
 pyinstaller \

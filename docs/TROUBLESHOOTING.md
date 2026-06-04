@@ -8,7 +8,7 @@
 
 **Fix:**
 ```bash
-cd src/stt && .venv/bin/pip install speechbrain
+.venv/bin/pip install speechbrain
 ```
 
 **Error:** `libstdc++.so.6: cannot find`
@@ -27,7 +27,7 @@ STD6_PATH=/nix/store/...-gcc-15.2.0-lib/lib/libstdc++.so.6 \
 
 **Fix:** Re-download the Piper voice model:
 ```bash
-cd src/tts && .venv/bin/python -c "from piper import PiperVoice; PiperVoice.download_voices('.')"
+.venv/bin/python -c "from piper import PiperVoice; PiperVoice.download_voices('.')"
 ```
 
 **Error:** `port already in use`

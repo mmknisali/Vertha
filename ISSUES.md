@@ -138,7 +138,7 @@ libstdc++.so.6: cannot open shared object file: No such file or directory
 
 **Workaround:** Restart the TTS server if Piper fails to load:
 ```bash
-cd src/tts && .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8766 --reload
+.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8766 --reload
 ```
 
 ---

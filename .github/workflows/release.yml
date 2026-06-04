@@ -1,21 +1,29 @@
-name: Build
+name: Release
 
 on:
   push:
     tags: ['v*']
 
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
 permissions:
   contents: write
 
 jobs:
-  build-linux:
+  release:
+    name: Build and Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Create resource directories
         run: |
@@ -86,94 +94,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests before release
+        run: |
+          npm test
+          source .venv/bin/activate || true
+          pytest tests/python/ --cov=src || true
+
       - name: Build frontend
         run: npm run build
 
-      - name: Build Electron app
+      - name: Build Electron app (Linux)
         run: npx electron-builder --linux --publish never
 
-      - name: Upload to GitHub Release
+      - name: Build Electron app (Windows)
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win --publish never
+
+      - name: Build Electron app (macOS)
+        if: runner.os == 'macOS'
+        run: npx electron-builder --mac --publish never
+
+      - name: Upload Linux AppImage
+        if: runner.os == 'Linux'
         uses: softprops/action-gh-release@v3
         with:
           files: release/Vertha-*.AppImage
           draft: false
           generate_release_notes: true
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Build STT binary
-        run: |
-          python -m pip install pyinstaller
-          python -m pip install -r requirements.txt
-          python -m PyInstaller --onefile --name stt-server --distpath resources/stt-server --workpath resources/stt-server/build --specpath resources/stt-server src/stt/server.py
-
-      - name: Build TTS binary
-        run: |
-          python -m pip install pyinstaller
-          python -m pip install -r requirements.txt
-          python -m PyInstaller --onefile --name tts-server --distpath resources/tts-server --workpath resources/tts-server/build --specpath resources/tts-server src/tts/server.py
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Electron app
-        run: npx electron-builder --win --publish never
-
-      - name: Upload to GitHub Release
+      - name: Upload Windows exe
+        if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v3
         with:
           files: release/*.exe
           draft: false
 
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Build STT binary
-        run: |
-          python3 -m pip install pyinstaller
-          python3 -m pip install -r requirements.txt
-          python3 -m PyInstaller --onefile --name stt-server --distpath resources/stt-server --workpath resources/stt-server/build --specpath resources/stt-server src/stt/server.py
-
-      - name: Build TTS binary
-        run: |
-          python3 -m pip install pyinstaller
-          python3 -m pip install -r requirements.txt
-          python3 -m PyInstaller --onefile --name tts-server --distpath resources/tts-server --workpath resources/tts-server/build --specpath resources/tts-server src/tts/server.py
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Electron app
-        run: npx electron-builder --mac --publish never
-
-      - name: Upload to GitHub Release
+      - name: Upload macOS dmg
+        if: runner.os == 'macOS'
         uses: softprops/action-gh-release@v3
         with:
           files: release/*.dmg

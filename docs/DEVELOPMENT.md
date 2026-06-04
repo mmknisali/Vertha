@@ -12,12 +12,12 @@ devenv up
 
 **STT Server:**
 ```bash
-cd src/stt && .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8765
+.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8765
 ```
 
 **TTS Server:**
 ```bash
-cd src/tts && .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8766
+.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8766
 ```
 
 **Frontend:**

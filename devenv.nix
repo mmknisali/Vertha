@@ -7,6 +7,7 @@
     pkgs.wmctrl
     pkgs.xorg.xdpyinfo
     pkgs.procps
+    pkgs.libglibutil
   ];
 
   enterShell = ''
@@ -14,14 +15,11 @@
       echo "Installing npm dependencies..."
       npm install
     fi
-    for dir in stt tts; do
-      VENV="src/$dir/.venv"
-      if [ ! -d "$VENV" ]; then
-        echo "Setting up $dir Python venv..."
-        ${pkgs.python312}/bin/python -m venv "$VENV"
-        "$VENV/bin/pip" install -r "src/$dir/requirements.txt"
-      fi
-    done
+    if [ ! -d .venv ]; then
+      echo "Setting up Python venv..."
+      ${pkgs.python312}/bin/python -m venv .venv
+      .venv/bin/pip install -r requirements.txt
+    fi
   '';
 
   processes = {
@@ -30,11 +28,13 @@
     '';
     stt-server.exec = ''
       export LD_PRELOAD=/nix/store/si4q3zks5mn5jhzzyri9hhd3cv789vlm-gcc-15.2.0-lib/lib/libstdc++.so.6
-      exec src/stt/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8765 --app-dir src/stt
+      export PYTHONPATH=/home/ali/workspace/mmknisali/vertha/src/stt
+      exec .venv/bin/python -c "from uvicorn.main import run; run('server:app', host='0.0.0.0', port=8765)"
     '';
     tts-server.exec = ''
       export LD_PRELOAD=/nix/store/si4q3zks5mn5jhzzyri9hhd3cv789vlm-gcc-15.2.0-lib/lib/libstdc++.so.6
-      exec src/tts/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8766 --app-dir src/tts
+      export PYTHONPATH=/home/ali/workspace/mmknisali/vertha/src/tts
+      exec .venv/bin/python -c "from uvicorn.main import run; run('server:app', host='0.0.0.0', port=8766)"
     '';
   };
 }

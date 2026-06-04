@@ -8,8 +8,7 @@ src/stt/.env.local
 src/tts/.env.local
 
 # Python venvs
-src/stt/.venv/
-src/tts/.venv/
+.venv/
 __pycache__/
 *.py[cod]
 *.pyc
