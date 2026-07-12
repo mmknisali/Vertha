@@ -210,14 +210,15 @@ class SpeakRequest(BaseModel):
 
 @app.post('/speak')
 async def speak(req: SpeakRequest):
+    text = req.text.strip()
+    if not text:
+        return Response(content=b'', media_type='audio/wav')
+
     if not voice:
         return JSONResponse(
             {'error': 'No voice model loaded — check PIPER_VOICE path in src/tts/.env.local'},
             status_code=503
         )
-
-    text = req.text.strip()
-    if not text:
         return Response(content=b'', media_type='audio/wav')
 
     logger.info(f'/speak: {len(text)} chars')
