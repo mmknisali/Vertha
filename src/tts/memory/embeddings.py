@@ -70,3 +70,12 @@ def search_collection(collection_name: str, query_embedding: list, limit: int = 
 def delete_from_collection(collection_name: str, ids: list[str]):
     collection = get_collection(collection_name)
     collection.delete(ids=ids)
+
+
+def clear_collection(collection_name: str):
+    client = get_chroma_client()
+    try:
+        client.delete_collection(name=collection_name)
+    except Exception as e:
+        logger.warning(f'Could not delete collection {collection_name}: {e}')
+    client.get_or_create_collection(name=collection_name)

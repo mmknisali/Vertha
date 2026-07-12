@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import re
@@ -335,8 +336,8 @@ async def execute_tasks(req: TaskExecuteRequest):
                 'narration': narration,
                 'remaining': remaining
             }
-            yield f"data: {data}\n\n"
-        yield f"data: {{'event': 'complete'}}\n\n"
+            yield f"data: {json.dumps(data)}\n\n"
+        yield f"data: {json.dumps({'event': 'complete'})}\n\n"
 
     return StreamingResponse(
         generate_sse(),

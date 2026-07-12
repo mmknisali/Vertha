@@ -63,8 +63,6 @@ Object.defineProperty(window, 'location', {
 });
 
 window.vertha = {
-  sttUrl: 'http://localhost:8765',
-  ttsUrl: 'http://localhost:8766',
   platform: 'linux',
   getConfig: vi.fn().mockResolvedValue({
     groqApiKey: 'test-key',

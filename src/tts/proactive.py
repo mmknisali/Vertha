@@ -19,13 +19,18 @@ class ProactiveEngine:
         now = datetime.now()
 
         if self.last_suggestion_time:
-            elapsed = (now - self.last_suggestion_time).seconds
+            elapsed = (now - self.last_suggestion_time).total_seconds()
             if elapsed < self.suggestion_cooldown:
                 return None
 
         suggestions = []
 
         hour = now.hour
+        if hour != MORNING_HOUR:
+            self.morning_done = False
+        if hour != NIGHT_HOUR:
+            self.night_done = False
+
         if hour == MORNING_HOUR and not self.morning_done and not context.get("morning_done"):
             suggestions.append(
                 "Good morning, sir. Say 'good morning' whenever you're ready for your briefing."

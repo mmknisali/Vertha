@@ -801,6 +801,19 @@ export default function App() {
       tier: 'moderate',
       message: 'Clear all memory?',
       action: 'This will delete all pinned memories and conversation history.',
+      onConfirmAction: async () => {
+        try {
+          const res = await fetch(`${ttsUrl}/memory/clear`, { method: 'DELETE' });
+          if (res.ok) {
+            setPinnedMemories([]);
+            setMemoryCount(0);
+          } else {
+            setErrorMsg('Failed to clear memory');
+          }
+        } catch (err) {
+          setErrorMsg('Failed to clear memory');
+        }
+      },
     });
   };
 
@@ -908,9 +921,12 @@ export default function App() {
         toast={confirmationToast}
         isSpeaking={status === 'speaking'}
         onConfirm={async () => {
-          if (confirmationToast?.confirm_id) {
+          const toast = confirmationToast;
+          setConfirmationToast(null);
+          if (!toast) return;
+          if (toast.confirm_id) {
             try {
-              const res = await fetch(`${ttsUrl}/pc/confirm/${confirmationToast.confirm_id}`, {
+              const res = await fetch(`${ttsUrl}/pc/confirm/${toast.confirm_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
               });
@@ -925,8 +941,9 @@ export default function App() {
             } catch (err) {
               setErrorMsg('Confirmation failed');
             }
+          } else if (toast.onConfirmAction) {
+            await toast.onConfirmAction();
           }
-          setConfirmationToast(null);
         }}
         onCancel={async () => {
           if (confirmationToast?.confirm_id) {

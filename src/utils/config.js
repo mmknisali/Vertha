@@ -25,18 +25,21 @@ export async function getConfig() {
   return DEV_DEFAULTS;
 }
 
-export async function getSttUrl() {
-  if (typeof window !== 'undefined' && window.vertha && window.vertha.sttUrl) {
-    return window.vertha.sttUrl;
+async function getUrls() {
+  if (typeof window !== 'undefined' && window.vertha && window.vertha.getUrls) {
+    return window.vertha.getUrls();
   }
-  return DEV_DEFAULTS.sttUrl;
+  return null;
+}
+
+export async function getSttUrl() {
+  const urls = await getUrls();
+  return (urls && urls.sttUrl) || DEV_DEFAULTS.sttUrl;
 }
 
 export async function getTtsUrl() {
-  if (typeof window !== 'undefined' && window.vertha && window.vertha.ttsUrl) {
-    return window.vertha.ttsUrl;
-  }
-  return DEV_DEFAULTS.ttsUrl;
+  const urls = await getUrls();
+  return (urls && urls.ttsUrl) || DEV_DEFAULTS.ttsUrl;
 }
 
 export async function saveConfig(config) {

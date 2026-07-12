@@ -3,6 +3,7 @@ import httpx
 import base64
 import logging
 import os
+import time
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
@@ -49,8 +50,8 @@ async def get_access_token() -> str:
 
     load_tokens()
 
-    current_time_s = asyncio.get_event_loop().time()
-    if ACCESS_TOKEN and TOKEN_EXPIRES_AT / 1000 > current_time_s:
+    now_ms = time.time() * 1000
+    if ACCESS_TOKEN and TOKEN_EXPIRES_AT - 60_000 > now_ms:
         return ACCESS_TOKEN
 
     if not REFRESH_TOKEN:
@@ -74,7 +75,7 @@ async def get_access_token() -> str:
 
     ACCESS_TOKEN = data['access_token']
     REFRESH_TOKEN = data.get('refresh_token', REFRESH_TOKEN)
-    TOKEN_EXPIRES_AT = asyncio.get_event_loop().time() * 1000 + data['expires_in'] * 1000
+    TOKEN_EXPIRES_AT = time.time() * 1000 + data['expires_in'] * 1000
     save_tokens()
     logger.info('Spotify token refreshed')
     return ACCESS_TOKEN
@@ -104,6 +105,8 @@ async def sp_post(endpoint: str, json_data=None, params=None):
             json=json_data,
             params=params,
         )
+        if resp.status_code == 204:
+            return {'status': 'ok'}
         resp.raise_for_status()
         return resp
 
@@ -116,6 +119,8 @@ async def sp_get(endpoint: str, params=None):
             headers={'Authorization': f'Bearer {token}'},
             params=params,
         )
+        if resp.status_code == 204:
+            return {'status': 'ok'}
         resp.raise_for_status()
         return resp
 
@@ -156,7 +161,7 @@ async def callback(code: str):
 
     ACCESS_TOKEN = data['access_token']
     REFRESH_TOKEN = data['refresh_token']
-    TOKEN_EXPIRES_AT = asyncio.get_event_loop().time() * 1000 + data['expires_in'] * 1000
+    TOKEN_EXPIRES_AT = time.time() * 1000 + data['expires_in'] * 1000
     save_tokens()
     logger.info('Spotify authenticated successfully')
     return {'status': 'authenticated'}

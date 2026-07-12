@@ -109,6 +109,14 @@ async def delete_pinned(id: int):
         await db.commit()
 
 
+async def clear_all_memory():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('DELETE FROM conversations')
+        await db.execute('DELETE FROM pinned_memories')
+        await db.commit()
+    logger.info('Cleared conversations and pinned_memories tables')
+
+
 async def create_session(session_id: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT OR IGNORE INTO sessions (id) VALUES (?)', (session_id,))

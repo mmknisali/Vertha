@@ -141,6 +141,19 @@ async def delete_pinned(id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete('/clear')
+async def clear_memory():
+    try:
+        await db.clear_all_memory()
+        embeddings.clear_collection('conversations')
+        embeddings.clear_collection('pinned')
+        logger.info('All memory cleared')
+        return {'status': 'cleared'}
+    except Exception as e:
+        logger.error(f'Clear memory error: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/sessions')
 async def get_sessions():
     try:

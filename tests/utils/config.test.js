@@ -27,14 +27,17 @@ describe('config.js', () => {
   });
 
   describe('getSttUrl', () => {
-    it('should return sttUrl from window.vertha when available', async () => {
+    it('should return sttUrl from window.vertha.getUrls when available', async () => {
       const originalVertha = window.vertha;
       window.vertha = {
         ...originalVertha,
-        sttUrl: 'http://localhost:8765',
+        getUrls: vi.fn().mockResolvedValue({
+          sttUrl: 'http://127.0.0.1:9001',
+          ttsUrl: 'http://127.0.0.1:9002',
+        }),
       };
       const result = await getSttUrl();
-      expect(result).toBe('http://localhost:8765');
+      expect(result).toBe('http://127.0.0.1:9001');
       window.vertha = originalVertha;
     });
 
@@ -48,14 +51,17 @@ describe('config.js', () => {
   });
 
   describe('getTtsUrl', () => {
-    it('should return ttsUrl from window.vertha when available', async () => {
+    it('should return ttsUrl from window.vertha.getUrls when available', async () => {
       const originalVertha = window.vertha;
       window.vertha = {
         ...originalVertha,
-        ttsUrl: 'http://localhost:8766',
+        getUrls: vi.fn().mockResolvedValue({
+          sttUrl: 'http://127.0.0.1:9001',
+          ttsUrl: 'http://127.0.0.1:9002',
+        }),
       };
       const result = await getTtsUrl();
-      expect(result).toBe('http://localhost:8766');
+      expect(result).toBe('http://127.0.0.1:9002');
       window.vertha = originalVertha;
     });
 

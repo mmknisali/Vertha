@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 const STATUS_COLORS = {
   monitoring: { core: '#00d4ff', glow: 'rgba(0, 212, 255, 0.4)', ring: '#00d4ff' },
@@ -13,7 +13,12 @@ export default function Orb({ status, interimText, taskProgress }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const particlesRef = useRef([]);
-  const [energyPulse, setEnergyPulse] = useState(0);
+  const energyPulseRef = useRef(0);
+  const statusRef = useRef(status);
+  const taskProgressRef = useRef(taskProgress);
+
+  statusRef.current = status;
+  taskProgressRef.current = taskProgress;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -23,6 +28,7 @@ export default function Orb({ status, interimText, taskProgress }) {
     const centerY = 150;
     const radius = 70;
 
+    particlesRef.current = [];
     for (let i = 0; i < 40; i++) {
       particlesRef.current.push({
         angle: Math.random() * Math.PI * 2,
@@ -36,18 +42,21 @@ export default function Orb({ status, interimText, taskProgress }) {
     }
 
     let phase = 0;
-    let lastStatus = status;
+    let lastStatus = statusRef.current;
 
     const draw = () => {
       ctx.clearRect(0, 0, 300, 300);
+      const status = statusRef.current;
+      const taskProgress = taskProgressRef.current;
       const colors = STATUS_COLORS[status] || STATUS_COLORS.monitoring;
 
       if (status !== lastStatus) {
         lastStatus = status;
-        setEnergyPulse(1);
+        energyPulseRef.current = 1;
       }
+      const energyPulse = energyPulseRef.current;
       if (energyPulse > 0) {
-        setEnergyPulse(prev => Math.max(0, prev - 0.02));
+        energyPulseRef.current = Math.max(0, energyPulse - 0.02);
       }
 
       const breathe = status === 'monitoring' ? Math.sin(phase * 0.4) * 0.08 + 1 : 1;
@@ -231,7 +240,7 @@ export default function Orb({ status, interimText, taskProgress }) {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [status, taskProgress, energyPulse]);
+  }, []);
 
   return (
     <div className="relative" style={{ width: 300, height: 300 }}>
