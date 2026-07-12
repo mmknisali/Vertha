@@ -4,28 +4,31 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import path from 'path';
 
-const isElectron = process.env.NODE_ENV === 'electron' || process.mode === 'electron';
+export default defineConfig(({ mode }) => {
+  const isElectron = mode === 'electron';
 
-export default defineConfig({
-  base: './',
-  plugins: [
-    react(),
-    electron([
-      {
-        entry: 'electron/main.js',
-        onstart(args) {
-          args.startup();
-        },
-      },
-      {
-        entry: 'electron/preload.js',
-        onstart(args) {
-          args.reload();
-        },
-      },
-    ]),
-    renderer(),
-  ],
+  return {
+    base: './',
+    plugins: [
+      react(),
+      ...(isElectron ? [
+        electron([
+          {
+            entry: 'electron/main.js',
+            onstart(args) {
+              args.startup();
+            },
+          },
+          {
+            entry: 'electron/preload.js',
+            onstart(args) {
+              args.reload();
+            },
+          },
+        ]),
+        renderer(),
+      ] : []),
+    ],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -46,4 +49,5 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  };
 });
