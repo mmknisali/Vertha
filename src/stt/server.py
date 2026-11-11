@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser(description='Vertha STT Server')
 parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8765)))
 args = parser.parse_args()
 
-STD6_PATH = os.getenv('STD6_PATH', '/nix/store/chqq8mpmpyfi9kgsngya71akv5xicn03-gcc-15.2.0-lib/lib/libstdc++.so.6.0.34')
+STD6_PATH = os.getenv('STD6_PATH', '')  # optional; set only on machines that need an explicit libstdc++ (was a Nix-only path)
 LIBZ_PATH = os.getenv('LIBZ_PATH', '')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')

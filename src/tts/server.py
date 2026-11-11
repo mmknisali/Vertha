@@ -236,7 +236,6 @@ async def speak(req: SpeakRequest):
             {'error': 'No voice model loaded — check PIPER_VOICE path in src/tts/.env.local'},
             status_code=503
         )
-        return Response(content=b'', media_type='audio/wav')
 
     logger.info(f'/speak: {len(text)} chars')
 
