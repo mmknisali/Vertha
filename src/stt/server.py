@@ -262,7 +262,7 @@ def _mime_and_name(content_type: str, audio: bytes) -> tuple[str, str]:
 
 
 async def _post_transcription(url: str, api_key: str, model: str, label: str,
-                              audio: bytes, content_type: str, verbose: bool):
+                              audio: bytes, content_type: str, verbose: bool, key_name: str):
     filename, mime = _mime_and_name(content_type, audio)
     data = {'model': model, 'temperature': 0}
     data['response_format'] = 'verbose_json' if verbose else 'json'
@@ -280,7 +280,7 @@ async def _post_transcription(url: str, api_key: str, model: str, label: str,
     except httpx.RequestError as e:
         raise SpeechFailed(f'could not reach {label} ({type(e).__name__})')
     if response.status_code in (401, 403):
-        raise SpeechFailed(f'{label} rejected its key')
+        raise SpeechFailed(f'{label} rejected {key_name}. Check it in src/stt/.env.local and restart the speech server')
     if response.status_code >= 400:
         raise SpeechFailed(f'{label} answered {response.status_code}')
     body = response.json()
@@ -296,17 +296,19 @@ async def transcribe_audio(audio: bytes, content_type: str) -> dict:
     if not engines:
         raise SpeechUnavailable(
             'Speech in is off: no speech key is set on the speech server. Add GROQ_API_KEY '
-            '(or OPENAI_API_KEY) to src/stt/.env.local and restart it. The app falls back to browser speech.'
+            '(or OPENAI_API_KEY) to src/stt/.env.local and restart it.'
         )
     errors = []
     for engine in engines:
         try:
             if engine == 'groq':
                 text, language = await _post_transcription(
-                    GROQ_URL, GROQ_API_KEY, GROQ_MODEL, 'Groq', audio, content_type, verbose=True)
+                    GROQ_URL, GROQ_API_KEY, GROQ_MODEL, 'Groq', audio, content_type, verbose=True,
+                    key_name='GROQ_API_KEY')
             else:
                 text, language = await _post_transcription(
-                    OPENAI_URL, OPENAI_API_KEY, OPENAI_STT_MODEL, 'OpenAI', audio, content_type, verbose=False)
+                    OPENAI_URL, OPENAI_API_KEY, OPENAI_STT_MODEL, 'OpenAI', audio, content_type, verbose=False,
+                    key_name='OPENAI_API_KEY')
             logger.info(f'Transcribed with {engine}: "{text[:80]}{"..." if len(text) > 80 else ""}"')
             return {'text': text, 'engine': engine, 'language': language}
         except SpeechFailed as e:
@@ -344,7 +346,7 @@ async def transcribe(file: UploadFile = File(...)):
         # Say why before anything else: a missing key is the answer, whatever the audio is.
         return JSONResponse(
             {'error': 'Speech in is off: no speech key is set on the speech server. Add GROQ_API_KEY '
-                      '(or OPENAI_API_KEY) to src/stt/.env.local and restart it. The app falls back to browser speech.',
+                      '(or OPENAI_API_KEY) to src/stt/.env.local and restart it.',
              'engine': None},
             status_code=503,
         )

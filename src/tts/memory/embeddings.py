@@ -2,10 +2,26 @@ import logging
 import os
 from pathlib import Path
 
-import chromadb
-from sentence_transformers import SentenceTransformer
-
 logger = logging.getLogger('vertha-memory')
+
+# Memory search is optional: chromadb and sentence-transformers are large packages. Without
+# them the voice server still starts and everything else works; only memory search is off.
+try:
+    import chromadb
+    from sentence_transformers import SentenceTransformer
+    _MEMORY_IMPORT_ERROR = None
+except ImportError as _exc:
+    chromadb = None
+    SentenceTransformer = None
+    _MEMORY_IMPORT_ERROR = _exc
+
+
+def _require_memory_packages():
+    if chromadb is None or SentenceTransformer is None:
+        raise RuntimeError(
+            f'Memory search is off: {_MEMORY_IMPORT_ERROR}. Install chromadb and sentence-transformers '
+            '(see requirements.txt) to turn it on.'
+        )
 
 MEMORY_PATH = Path.home() / '.local' / 'share' / 'vertha' / 'memory'
 CHROMA_PATH = MEMORY_PATH / 'chroma'
@@ -17,6 +33,7 @@ _model = None
 
 def get_chroma_client():
     global _client
+    _require_memory_packages()
     if _client is None:
         _client = chromadb.PersistentClient(path=str(CHROMA_PATH))
     return _client
@@ -24,6 +41,7 @@ def get_chroma_client():
 
 def get_model():
     global _model
+    _require_memory_packages()
     if _model is None:
         logger.info(f'Loading embedding model: {EMBEDDING_MODEL}')
         _model = SentenceTransformer(EMBEDDING_MODEL, device='cpu')
