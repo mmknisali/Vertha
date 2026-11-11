@@ -6,6 +6,8 @@ import base64
 from pathlib import Path
 from typing import Any
 
+import reminders
+
 logger = logging.getLogger('vertha-tool-executor')
 
 BLOCKED_PATHS = ["/", "/home", "/var", "/etc", "/bin", "/sbin", "/usr"]
@@ -205,6 +207,9 @@ class ToolExecutor:
             "file_delete": self._file_delete,
             "file_list": self._file_list,
             "file_exists": self._file_exists,
+            "add_reminder": self._add_reminder,
+            "list_reminders": self._list_reminders,
+            "complete_reminder": self._complete_reminder,
         }
 
     async def execute(self, tool_name: str, input_data: dict) -> dict[str, Any]:
@@ -257,6 +262,15 @@ class ToolExecutor:
         if not path:
             return {"success": False, "error": "No path provided"}
         return await self.file_ops.exists(path)
+
+    async def _add_reminder(self, input_data: dict) -> dict[str, Any]:
+        return await reminders.tool_add_reminder(input_data)
+
+    async def _list_reminders(self, input_data: dict) -> dict[str, Any]:
+        return await reminders.tool_list_reminders(input_data)
+
+    async def _complete_reminder(self, input_data: dict) -> dict[str, Any]:
+        return await reminders.tool_complete_reminder(input_data)
 
 
 _tool_executor: ToolExecutor | None = None

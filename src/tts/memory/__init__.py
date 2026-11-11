@@ -10,10 +10,15 @@ from .db import (
     get_all_sessions,
 )
 
-from .embeddings import (
-    generate_embedding,
-    generate_embeddings_batch,
-    add_to_collection,
-    search_collection,
-    delete_from_collection,
-)
+# The embeddings module needs chromadb and sentence-transformers. Re-export it
+# only when those are installed, so the SQLite store (db) imports without them.
+try:
+    from .embeddings import (
+        generate_embedding,
+        generate_embeddings_batch,
+        add_to_collection,
+        search_collection,
+        delete_from_collection,
+    )
+except ImportError:  # ML packages not installed; db-only use still works
+    pass

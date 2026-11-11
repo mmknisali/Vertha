@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import Orb from './Orb.jsx';
 import FrequencyVisualizer from './FrequencyVisualizer.jsx';
 import ConversationLog from './ConversationLog.jsx';
+import { ENGINE_LABELS } from '../hooks/useSTT.js';
 
 const STATUS_CONFIG = {
   monitoring: { color: '#3b82f6', text: 'MONITORING' },
@@ -18,6 +19,10 @@ export default function CenterPanel({
   analyser,
   onManualTrigger,
   taskProgress,
+  wakeMode = 'push',
+  wakePhrase = 'jarvis',
+  voiceOutOn = true,
+  speechEngine = 'browser',
 }) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.monitoring;
 
@@ -92,9 +97,38 @@ export default function CenterPanel({
             letterSpacing: '0.1em',
           }}
         >
-          Say "Hey Vertha" or click to speak
+          {wakeMode === 'model' && 'Say "Hey Vertha" or click to speak'}
+          {wakeMode === 'keyword' && `Say "${wakePhrase}" or click to speak`}
+          {wakeMode === 'push' && 'Click to speak'}
         </span>
       </div>
+      <div
+        style={{
+          fontFamily: 'Rajdhani, sans-serif',
+          fontSize: 10,
+          color: 'rgba(224, 247, 255, 0.4)',
+          letterSpacing: '0.08em',
+          marginTop: -18,
+          marginBottom: 10,
+        }}
+      >
+        {`Speech in: ${ENGINE_LABELS[speechEngine] || speechEngine}`}
+        {wakeMode === 'keyword' && ' · the wake phrase is matched on the transcript, so the speech engine must be running'}
+      </div>
+      {!voiceOutOn && (
+        <div
+          style={{
+            fontFamily: 'Rajdhani, sans-serif',
+            fontSize: 11,
+            color: 'rgba(224, 247, 255, 0.45)',
+            letterSpacing: '0.08em',
+            marginTop: -16,
+            marginBottom: 12,
+          }}
+        >
+          Text only: voice out is not set up (PIPER_VOICE is not configured)
+        </div>
+      )}
 
       <div
         className="flex-1 w-full max-w-xl"

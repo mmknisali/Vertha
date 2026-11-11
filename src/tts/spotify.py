@@ -45,6 +45,23 @@ def save_tokens():
     }))
 
 
+def _spotify_error(resp: httpx.Response) -> HTTPException:
+    """Turn a Spotify error reply into an HTTP error the app can show.
+
+    Without this, raise_for_status() leaks an httpx error and every failed
+    call (for example 404 "No active device") comes back as a bare 500.
+    """
+    try:
+        body = resp.json()
+        message = body.get('error', {}).get('message') if isinstance(body, dict) else None
+    except ValueError:
+        message = None
+    message = message or resp.reason_phrase or 'request failed'
+    status = resp.status_code if 400 <= resp.status_code < 500 else 502
+    logger.warning(f'Spotify {resp.request.method} {resp.request.url.path} -> {resp.status_code}: {message}')
+    return HTTPException(status_code=status, detail=f'Spotify: {message}')
+
+
 async def get_access_token() -> str:
     global ACCESS_TOKEN, REFRESH_TOKEN, TOKEN_EXPIRES_AT
 
@@ -92,7 +109,8 @@ async def sp_put(endpoint: str, json_data=None, params=None):
         )
         if resp.status_code == 204:
             return {'status': 'ok'}
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise _spotify_error(resp)
         return resp
 
 
@@ -107,7 +125,8 @@ async def sp_post(endpoint: str, json_data=None, params=None):
         )
         if resp.status_code == 204:
             return {'status': 'ok'}
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise _spotify_error(resp)
         return resp
 
 
@@ -121,7 +140,8 @@ async def sp_get(endpoint: str, params=None):
         )
         if resp.status_code == 204:
             return {'status': 'ok'}
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise _spotify_error(resp)
         return resp
 
 
@@ -177,12 +197,19 @@ async def set_volume(volume: int):
 
 
 @router.put('/play')
-async def play(context_uri: str):
-    await sp_put(
-        '/me/player/play',
-        json_data={'context_uri': context_uri},
-    )
-    logger.info(f'Playing {context_uri}')
+async def play(context_uri: str | None = None, episode_uri: str | None = None):
+    # Spotify takes albums, artists, playlists and shows as context_uri; a single
+    # episode has to go in uris instead.
+    if episode_uri:
+        body = {'uris': [episode_uri]}
+        target = episode_uri
+    elif context_uri:
+        body = {'context_uri': context_uri}
+        target = context_uri
+    else:
+        raise HTTPException(status_code=400, detail='Give context_uri or episode_uri')
+    await sp_put('/me/player/play', json_data=body)
+    logger.info(f'Playing {target}')
     return {'status': 'playing'}
 
 

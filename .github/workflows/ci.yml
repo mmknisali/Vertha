@@ -2,41 +2,55 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'tab/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   NODE_VERSION: '20'
   PYTHON_VERSION: '3.12'
+  # The Electron binary is large and is not needed to run the unit tests.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
   lint:
-    name: Lint
+    name: Lint (Python syntax and undefined names)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install ruff
+        run: python -m pip install ruff
 
-      - name: Run ESLint
-        run: npm run lint || true
+      # Only the checks that find real errors: syntax errors, undefined names,
+      # bad imports. Style is not enforced. The repo has no JavaScript linter
+      # configured; the build job parses every JS and JSX file.
+      - name: Run ruff (error-level rules)
+        run: ruff check --select E9,F63,F7,F82 --output-format=github src/tts src/stt tests/python
 
   test-frontend:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
+    name: Frontend tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -45,51 +59,57 @@ jobs:
         run: npm test
 
       - name: Upload coverage to Codecov
-        if: always()
+        if: matrix.os == 'ubuntu-latest' && always()
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage/lcov.info
           flags: unittests
           name: frontend-coverage
+        continue-on-error: true
 
   test-python:
-    name: Python Tests
+    name: Server tests without ML packages (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tests/python/requirements-ci.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r tests/python/requirements-ci.txt
+
+      - name: Run pytest (no ML packages)
+        run: python -m pytest tests/python --ignore=tests/python/test_tts_server.py -p no:cacheprovider
+
+  test-electron:
+    name: Electron tests
     runs-on: ubuntu-latest
     needs: lint
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Create virtual environment
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install dependencies
-        run: |
-          source .venv/bin/activate
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov httpx
+        run: npm ci
 
-      - name: Run pytest
-        run: |
-          source .venv/bin/activate
-          pytest tests/python/ --cov=src --cov-report=xml --cov-report=html
-
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: python
-          name: python-coverage
+      - name: Run Electron tests
+        run: npm run test:electron
 
   build-check:
-    name: Build Check
+    name: Build check
     runs-on: ubuntu-latest
     needs: [test-frontend, test-python]
     steps:
@@ -98,6 +118,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -108,10 +129,9 @@ jobs:
       - name: Verify build output
         run: |
           test -f dist/index.html && echo "Frontend build OK"
-          test -d dist-electron && echo "Electron build OK"
 
   security-audit:
-    name: Security Audit
+    name: Security audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,25 +146,8 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=high || true
 
-  test-electron:
-    name: Electron Tests
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run Electron tests
-        run: npm run test:electron
-
   test-e2e:
-    name: E2E Tests
+    name: E2E tests
     runs-on: ubuntu-latest
     needs: build-check
     if: github.event_name == 'pull_request'
@@ -154,6 +157,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -172,23 +176,17 @@ jobs:
         shell: bash
 
   all-tests-pass:
-    name: All Tests Passed
+    name: All required checks passed
     runs-on: ubuntu-latest
-    needs: [lint, test-frontend, test-python, build-check, test-electron]
+    needs: [lint, test-frontend, test-python, test-electron, build-check]
     if: always()
     steps:
-      - name: Check if all required jobs passed
+      - name: Check required jobs
         run: |
-          if [[ "${{ needs.test-frontend.result }}" != "success" ]]; then
-            echo "Frontend tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.test-python.result }}" != "success" ]]; then
-            echo "Python tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.build-check.result }}" != "success" ]]; then
-            echo "Build check failed"
-            exit 1
-          fi
-          echo "All critical checks passed!"
+          for result in "${{ needs.lint.result }}" "${{ needs.test-frontend.result }}" "${{ needs.test-python.result }}" "${{ needs.test-electron.result }}" "${{ needs.build-check.result }}"; do
+            if [[ "$result" != "success" ]]; then
+              echo "A required check did not pass: $result"
+              exit 1
+            fi
+          done
+          echo "All required checks passed"

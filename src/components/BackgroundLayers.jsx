@@ -17,7 +17,7 @@ export default function BackgroundLayers() {
         style={{
           background: `
             radial-gradient(ellipse at 50% 100%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
-            radial-gradient(ellipse at 0% 0%, rgba(123, 47, 255, 0.02) 0%, transparent 40%)
+            radial-gradient(ellipse at 0% 0%, rgba(0, 212, 255, 0.02) 0%, transparent 40%)
           `,
         }}
       />

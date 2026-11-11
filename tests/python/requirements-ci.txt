@@ -1,0 +1,11 @@
+# Python packages needed by the server tests that run without the ML stack.
+# The TTS server test (tests/python/test_tts_server.py) also needs chromadb and
+# sentence-transformers, so it is excluded in CI until those are installed there.
+fastapi
+httpx
+pydantic
+uvicorn
+python-dotenv
+python-multipart
+aiosqlite
+pytest

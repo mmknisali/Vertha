@@ -45,7 +45,7 @@ export default function FrequencyVisualizer({ analyser, isActive }) {
 
         const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
         gradient.addColorStop(0, 'rgba(0, 212, 255, 0.8)');
-        gradient.addColorStop(1, 'rgba(123, 47, 255, 0.9)');
+        gradient.addColorStop(1, 'rgba(0, 255, 157, 0.9)');
 
         ctx.beginPath();
         ctx.moveTo(x1, y1);

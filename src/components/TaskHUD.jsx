@@ -47,7 +47,7 @@ export default function TaskHUD({ task, onAbort }) {
     <div
       className="rounded-lg overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 0, 30, 0.95) 100%)',
+        background: 'rgba(4, 14, 24, 0.95)',
         border: '1px solid rgba(0, 212, 255, 0.3)',
         boxShadow: '0 0 30px rgba(0, 212, 255, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.5)',
       }}

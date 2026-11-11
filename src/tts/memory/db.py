@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS task_snapshots (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
+
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    done INTEGER NOT NULL DEFAULT 0,
+    done_at TEXT,
+    notified_at TEXT
+);
 """
 
 
@@ -224,3 +234,66 @@ async def get_task_history(limit: int = 10):
             'id': r[0], 'goal': r[1], 'status': r[2],
             'started_at': r[3], 'finished_at': r[4], 'summary': r[5], 'progress': r[6]
         } for r in rows]
+
+
+async def add_reminder(text: str, due_at: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            'INSERT INTO reminders (text, due_at) VALUES (?, ?)', (text, due_at)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def list_reminders(include_done: bool = False):
+    sql = 'SELECT id, text, due_at, done, done_at, notified_at, created_at FROM reminders'
+    if not include_done:
+        sql += ' WHERE done = 0'
+    sql += ' ORDER BY due_at, id'
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(sql)
+    return [_reminder_row(r) for r in rows]
+
+
+async def get_reminder(id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(
+            'SELECT id, text, due_at, done, done_at, notified_at, created_at FROM reminders WHERE id = ?',
+            (id,)
+        )
+    return _reminder_row(rows[0]) if rows else None
+
+
+async def complete_reminder(id: int, done_at: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            'UPDATE reminders SET done = 1, done_at = ? WHERE id = ? AND done = 0',
+            (done_at, id)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def list_pending_reminders():
+    """Open reminders that have not been surfaced yet (not done, never notified)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(
+            'SELECT id, text, due_at, done, done_at, notified_at, created_at FROM reminders '
+            'WHERE done = 0 AND notified_at IS NULL ORDER BY due_at, id'
+        )
+    return [_reminder_row(r) for r in rows]
+
+
+async def mark_reminder_notified(id: int, notified_at: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            'UPDATE reminders SET notified_at = ? WHERE id = ?', (notified_at, id)
+        )
+        await db.commit()
+
+
+def _reminder_row(r):
+    return {
+        'id': r[0], 'text': r[1], 'due_at': r[2], 'done': bool(r[3]),
+        'done_at': r[4], 'notified_at': r[5], 'created_at': r[6],
+    }

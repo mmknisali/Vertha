@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { serviceUrl } from '../utils/endpoints.js';
 
 import { getTtsUrl } from '../utils/config.js';
 
@@ -17,7 +18,7 @@ function cleanTextForSpeech(text) {
 
 export default function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [ttsUrl, setTtsUrl] = useState('http://localhost:8766');
+  const [ttsUrl, setTtsUrl] = useState(() => serviceUrl('tts'));
   const audioRef = useRef(null);
   const queueRef = useRef([]);
   const isPlayingRef = useRef(false);
@@ -141,8 +142,22 @@ export default function useTTS() {
       });
       abortRef.current = null;
 
+      if (res.status === 503) {
+        // No Piper voice on the server: the answer is already on screen as text, so this is
+        // not an error. The app shows "Text only" while voice out is off.
+        console.warn('[useTTS] Voice out is off on the server; answering as text only');
+        queueRef.current = [];
+        isPlayingRef.current = false;
+        setIsSpeaking(false);
+        const onEnd = onEndRef.current;
+        onEndRef.current = null;
+        onEnd?.();
+        return;
+      }
+
       if (!res.ok) {
-        throw new Error(`TTS request failed: ${res.status}`);
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `Voice out failed (${res.status})`);
       }
 
       const blob = await res.blob();
