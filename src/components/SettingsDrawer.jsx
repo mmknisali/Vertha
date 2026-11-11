@@ -32,7 +32,6 @@ export default function SettingsDrawer({
           background: 'rgba(0, 0, 0, 0.95)',
           border: '1px solid rgba(0, 212, 255, 0.2)',
           borderLeft: 'none',
-          backdropFilter: 'blur(20px)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

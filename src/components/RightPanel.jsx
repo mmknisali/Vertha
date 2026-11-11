@@ -25,25 +25,16 @@ export default function RightPanel({ weather, spotify, tasks }) {
     });
   };
 
-  const weatherIcons = {
-    sunny: '☀️',
-    cloudy: '☁️',
-    rainy: '🌧️',
-    stormy: '⛈️',
-    snowy: '❄️',
-    foggy: '🌫️',
-    default: '🌤️',
-  };
-
-  const getWeatherIcon = (condition) => {
+  // Text marks instead of emoji: they stay in the HUD's type and colour.
+  const getWeatherMark = (condition) => {
     const c = condition?.toLowerCase() || '';
-    if (c.includes('rain') || c.includes('drizzle')) return weatherIcons.rainy;
-    if (c.includes('thunder') || c.includes('storm')) return weatherIcons.stormy;
-    if (c.includes('snow')) return weatherIcons.snowy;
-    if (c.includes('fog') || c.includes('mist')) return weatherIcons.foggy;
-    if (c.includes('cloud')) return weatherIcons.cloudy;
-    if (c.includes('clear') || c.includes('sun')) return weatherIcons.sunny;
-    return weatherIcons.default;
+    if (c.includes('rain') || c.includes('drizzle')) return 'RAIN';
+    if (c.includes('thunder') || c.includes('storm')) return 'STORM';
+    if (c.includes('snow')) return 'SNOW';
+    if (c.includes('fog') || c.includes('mist')) return 'FOG';
+    if (c.includes('cloud')) return 'CLOUD';
+    if (c.includes('clear') || c.includes('sun')) return 'CLEAR';
+    return 'WEATHER';
   };
 
   return (
@@ -54,14 +45,13 @@ export default function RightPanel({ weather, spotify, tasks }) {
         minWidth: 280,
         background: 'rgba(0, 212, 255, 0.03)',
         border: '1px solid rgba(0, 212, 255, 0.15)',
-        backdropFilter: 'blur(10px)',
         position: 'relative',
       }}
     >
       <div
         className="absolute top-0 left-0 right-0 h-0.5"
         style={{
-          background: 'linear-gradient(90deg, transparent, #7b2fff, #00d4ff)',
+          background: 'rgba(0, 212, 255, 0.6)',
         }}
       />
 
@@ -102,7 +92,7 @@ export default function RightPanel({ weather, spotify, tasks }) {
         <div style={{ fontSize: 10, color: 'rgba(224, 247, 255, 0.4)', letterSpacing: '0.15em', marginBottom: 8 }}>WEATHER</div>
         {weather ? (
           <div className="flex items-center gap-4">
-            <span style={{ fontSize: 32 }}>{getWeatherIcon(weather.condition)}</span>
+            <span style={{ fontFamily: 'Orbitron, sans-serif', fontSize: 12, color: 'rgba(0, 212, 255, 0.8)', letterSpacing: '0.15em', minWidth: 56 }}>{getWeatherMark(weather.condition)}</span>
             <div>
               <div style={{ fontFamily: 'Orbitron, sans-serif', fontSize: 24, color: '#e0f7ff' }}>
                 {weather.current_temp}°C
@@ -162,8 +152,8 @@ export default function RightPanel({ weather, spotify, tasks }) {
                   alignItems: 'center',
                   gap: 8,
                   padding: '6px 8px',
-                  background: 'rgba(123, 47, 255, 0.05)',
-                  border: '1px solid rgba(123, 47, 255, 0.2)',
+                  background: 'rgba(0, 212, 255, 0.04)',
+                  border: '1px solid rgba(0, 212, 255, 0.15)',
                   borderRadius: 3,
                 }}
               >
@@ -189,7 +179,7 @@ export default function RightPanel({ weather, spotify, tasks }) {
               </div>
             ))
           ) : (
-            <div style={{ fontSize: 10, color: 'rgba(224, 247, 255, 0.3)', fontStyle: 'italic' }}>no active tasks</div>
+            <div style={{ fontSize: 11, color: 'rgba(224, 247, 255, 0.3)', fontStyle: 'italic', fontFamily: 'Rajdhani, sans-serif' }}>No tasks running, sir.</div>
           )}
         </div>
       </div>

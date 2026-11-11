@@ -984,6 +984,7 @@ export default function App() {
           onChange={(e) => setTextInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') sendText(); }}
           placeholder="Type command..."
+          aria-label="Type a command"
           style={{
             flex: 1,
             padding: '10px 16px',

@@ -133,7 +133,6 @@ export default function ConfirmationToast({ toast, onConfirm, onCancel, isSpeaki
         borderLeft: '4px solid #00d4ff',
         borderRadius: 4,
         padding: 16,
-        backdropFilter: 'blur(10px)',
         animation: 'slideIn 0.3s ease-out',
       }}
     >

@@ -29,14 +29,13 @@ export default function LeftPanel({ systemStatus, memoryCount, pinnedMemories, a
         minWidth: 220,
         background: 'rgba(0, 212, 255, 0.03)',
         border: '1px solid rgba(0, 212, 255, 0.15)',
-        backdropFilter: 'blur(10px)',
         position: 'relative',
       }}
     >
       <div
         className="absolute top-0 left-0 right-0 h-0.5"
         style={{
-          background: 'linear-gradient(90deg, #00d4ff, #7b2fff, transparent)',
+          background: 'rgba(0, 212, 255, 0.6)',
         }}
       />
 

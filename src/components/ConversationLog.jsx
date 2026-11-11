@@ -37,6 +37,17 @@ function TypewriterText({ text, speed = 30, onComplete }) {
 export default function ConversationLog({ messages }) {
   const scrollRef = useRef(null);
 
+  if (!messages.length) {
+    return (
+      <div
+        className="flex-1 flex items-center justify-center text-center"
+        style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 13, color: 'rgba(224, 247, 255, 0.4)', padding: 24 }}
+      >
+        Standing by, sir. Say "Hey Vertha" or type below to begin.
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -81,8 +92,8 @@ export default function ConversationLog({ messages }) {
               style={{
                 maxWidth: '85%',
                 padding: '8px 12px',
-                background: isUser ? 'rgba(59, 130, 246, 0.05)' : 'rgba(0, 212, 255, 0.05)',
-                border: `1px solid ${isUser ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0, 212, 255, 0.15)'}`,
+                background: isUser ? 'rgba(224, 247, 255, 0.04)' : 'rgba(0, 212, 255, 0.05)',
+                border: `1px solid ${isUser ? 'rgba(224, 247, 255, 0.15)' : 'rgba(0, 212, 255, 0.15)'}`,
                 borderRadius: 4,
               }}
             >
