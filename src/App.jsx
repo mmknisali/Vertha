@@ -127,6 +127,9 @@ You can control the user's PC. Use pc tools naturally when asked — 'open firef
 
 const INITIAL_MESSAGES = [{ role: 'system', content: SYSTEM_PROMPT }];
 
+const SPEECH_DOWN_MSG =
+  'The speech server is not answering. Start it (see "Voice setup on your server" in the README), then click to speak again.';
+
 const EMOTION_COLORS = {
   neutral: '#00d4ff',
   happy: '#00ffcc',
@@ -144,6 +147,8 @@ export default function App() {
   const [wakeMode, setWakeMode] = useState('push');
   const [wakePhrase, setWakePhrase] = useState('jarvis');
   const [voiceOutOn, setVoiceOutOn] = useState(true);
+  // Which voice out the voice server uses: 'piper', 'groq', or null (text only / not checked).
+  const [voiceEngine, setVoiceEngine] = useState(null);
   // null = not checked yet; true/false = whether the server holds ZEN_API_KEY.
   const [zenServerKey, setZenServerKey] = useState(null);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
@@ -204,16 +209,29 @@ export default function App() {
           if (!cancelled) {
             setWakeMode(d.wakeword ? 'model' : (d.wake_keyword ? 'keyword' : 'push'));
             setWakePhrase(d.wake_phrase || 'jarvis');
+            if (!d.speech_engines?.length) {
+              setErrorMsg('Speech in needs GROQ_API_KEY. Add it to src/stt/.env.local, restart the speech server, then click to speak again.');
+            }
           }
+        } else if (!cancelled) {
+          setErrorMsg(SPEECH_DOWN_MSG);
         }
-      } catch (_) { /* speech server not reachable; push-to-talk still works (browser speech) */ }
+      } catch (_) {
+        if (!cancelled) setErrorMsg(SPEECH_DOWN_MSG);
+      }
       try {
         const r = await fetch(`${ttsBase}/health`);
         if (r.ok) {
           const d = await r.json();
-          if (!cancelled) setVoiceOutOn(Boolean(d.voice));
+          if (!cancelled) {
+            setVoiceOutOn(Boolean(d.voice));
+            setVoiceEngine(d.voice ? d.engine : null);
+          }
         }
-      } catch (_) { /* voice server not reachable; answers still show as text */ }
+      } catch (_) {
+        // Voice server not reachable: answers show as text, labelled as such.
+        if (!cancelled) setVoiceOutOn(false);
+      }
       try {
         const r = await fetch('/api/vertha/zen-status');
         if (r.ok) {
@@ -836,9 +854,11 @@ export default function App() {
     }
   }, [status]);
 
+  // The status light goes back to monitoring after a moment; the message stays until it is
+  // dismissed or the next try clears it, so a missing key or a stopped server can be read.
   useEffect(() => {
     if (status === 'error') {
-      const t = setTimeout(() => { setStatus('monitoring'); setErrorMsg(''); }, 4000);
+      const t = setTimeout(() => { setStatus('monitoring'); }, 4000);
       return () => clearTimeout(t);
     }
   }, [status]);
@@ -850,6 +870,7 @@ export default function App() {
     getAudioCtx();
     playBeep('activation');
     setInterimText('');
+    setErrorMsg('');
     setStatus('listening');
     sttRef.current.startListening();
   };
@@ -912,10 +933,18 @@ export default function App() {
 
       {errorMsg && (
         <div
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-black/90 border border-red-500/50 rounded-lg backdrop-blur-sm"
-          style={{ boxShadow: '0 0 30px rgba(239,68,68,0.3)' }}
+          role="alert"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-start gap-4 px-6 py-3 bg-black/90 border border-red-500/60 rounded-lg backdrop-blur-sm"
+          style={{ boxShadow: '0 0 30px rgba(239,68,68,0.3)', maxWidth: 640 }}
         >
-          <span className="text-red-400 text-sm font-mono">{errorMsg}</span>
+          <span className="text-red-300 text-sm font-mono">{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => setErrorMsg('')}
+            className="text-red-200/70 hover:text-red-100 text-xs font-mono underline shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -950,7 +979,9 @@ export default function App() {
         wakeMode={wakeMode}
         wakePhrase={wakePhrase}
         voiceOutOn={voiceOutOn}
+        voiceEngine={voiceEngine}
         speechEngine={stt.engine}
+        aiReady={zenServerKey !== false || Boolean(apiKey)}
       />
 
       <RightPanel

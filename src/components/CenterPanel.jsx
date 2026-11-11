@@ -4,6 +4,8 @@ import FrequencyVisualizer from './FrequencyVisualizer.jsx';
 import ConversationLog from './ConversationLog.jsx';
 import { ENGINE_LABELS } from '../hooks/useSTT.js';
 
+const VOICE_LABELS = { piper: 'Piper', groq: 'Groq speech' };
+
 const STATUS_CONFIG = {
   monitoring: { color: '#3b82f6', text: 'MONITORING' },
   listening: { color: '#22c55e', text: 'LISTENING FOR COMMAND' },
@@ -22,9 +24,35 @@ export default function CenterPanel({
   wakeMode = 'push',
   wakePhrase = 'jarvis',
   voiceOutOn = true,
-  speechEngine = 'browser',
+  voiceEngine = null,
+  speechEngine = null,
+  aiReady = true,
 }) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.monitoring;
+  const busy = ['listening', 'processing', 'thinking', 'speaking'].includes(status);
+  const buttonLabel = {
+    listening: 'LISTENING...',
+    processing: 'TRANSCRIBING...',
+    thinking: 'THINKING...',
+    speaking: 'SPEAKING...',
+  }[status] || (wakeMode === 'push' ? 'PUSH TO TALK' : 'CLICK TO SPEAK');
+  const wakeChip = wakeMode === 'model'
+    ? 'Wake word: "Hey Vertha"'
+    : wakeMode === 'keyword'
+      ? `Wake phrase: "${wakePhrase}"`
+      : 'Push to talk only';
+  const chips = [
+    speechEngine
+      ? { ok: true, text: `Speech in: ${ENGINE_LABELS[speechEngine] || speechEngine}` }
+      : { ok: false, text: 'Speech in: not ready (see the message at the top)' },
+    voiceOutOn
+      ? { ok: true, text: `Voice out: ${VOICE_LABELS[voiceEngine] || 'ready'}` }
+      : { ok: false, text: 'Text only: voice out is not set up' },
+    { ok: true, text: wakeChip },
+    aiReady
+      ? { ok: true, text: 'AI answers: ready' }
+      : { ok: false, text: 'AI answers: need ZEN_API_KEY on the server' },
+  ];
 
   return (
     <div
@@ -75,60 +103,56 @@ export default function CenterPanel({
         </div>
       )}
 
-      <div
-        className="flex items-center gap-3 mb-6 cursor-pointer hover:opacity-80 transition-opacity"
+      <button
+        type="button"
         onClick={onManualTrigger}
-      >
-        <div
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: '50%',
-            background: status === 'listening' ? '#22c55e' : status === 'monitoring' ? '#3b82f6' : '#666',
-            boxShadow: `0 0 10px ${status === 'listening' ? '#22c55e' : status === 'monitoring' ? '#3b82f6' : '#666'}50`,
-            animation: status === 'listening' ? 'pulse 1.5s infinite' : 'none',
-          }}
-        />
-        <span
-          style={{
-            fontFamily: 'Rajdhani, sans-serif',
-            fontSize: 11,
-            color: 'rgba(224, 247, 255, 0.5)',
-            letterSpacing: '0.1em',
-          }}
-        >
-          {wakeMode === 'model' && 'Say "Hey Vertha" or click to speak'}
-          {wakeMode === 'keyword' && `Say "${wakePhrase}" or click to speak`}
-          {wakeMode === 'push' && 'Click to speak'}
-        </span>
-      </div>
-      <div
+        disabled={busy}
+        aria-label={buttonLabel}
         style={{
-          fontFamily: 'Rajdhani, sans-serif',
-          fontSize: 10,
-          color: 'rgba(224, 247, 255, 0.4)',
-          letterSpacing: '0.08em',
-          marginTop: -18,
-          marginBottom: 10,
+          marginBottom: 12,
+          padding: '10px 28px',
+          borderRadius: 999,
+          border: `1px solid ${config.color}`,
+          background: busy ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 212, 255, 0.08)',
+          color: busy ? 'rgba(224, 247, 255, 0.5)' : '#e0f7ff',
+          fontFamily: 'Orbitron, sans-serif',
+          fontSize: 12,
+          letterSpacing: '0.16em',
+          cursor: busy ? 'default' : 'pointer',
         }}
       >
-        {`Speech in: ${ENGINE_LABELS[speechEngine] || speechEngine}`}
-        {wakeMode === 'keyword' && ' · the wake phrase is matched on the transcript, so the speech engine must be running'}
+        {buttonLabel}
+      </button>
+
+      <div className="flex flex-wrap justify-center gap-2 mb-4" style={{ maxWidth: 560 }}>
+        {chips.map((chip) => (
+          <span
+            key={chip.text}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '3px 10px',
+              borderRadius: 999,
+              border: `1px solid ${chip.ok ? 'rgba(0, 212, 255, 0.18)' : 'rgba(251, 191, 36, 0.5)'}`,
+              background: 'rgba(0, 0, 0, 0.35)',
+              fontFamily: 'Rajdhani, sans-serif',
+              fontSize: 12,
+              color: chip.ok ? 'rgba(224, 247, 255, 0.8)' : '#fbbf24',
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: chip.ok ? '#22c55e' : '#fbbf24',
+              }}
+            />
+            {chip.text}
+          </span>
+        ))}
       </div>
-      {!voiceOutOn && (
-        <div
-          style={{
-            fontFamily: 'Rajdhani, sans-serif',
-            fontSize: 11,
-            color: 'rgba(224, 247, 255, 0.45)',
-            letterSpacing: '0.08em',
-            marginTop: -16,
-            marginBottom: 12,
-          }}
-        >
-          Text only: voice out is not set up (PIPER_VOICE is not configured)
-        </div>
-      )}
 
       <div
         className="flex-1 w-full max-w-xl"
