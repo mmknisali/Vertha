@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { serviceUrl } from '../utils/endpoints.js';
 
 import { getTtsUrl } from '../utils/config.js';
 
@@ -17,7 +18,7 @@ function cleanTextForSpeech(text) {
 
 export default function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [ttsUrl, setTtsUrl] = useState('http://localhost:8766');
+  const [ttsUrl, setTtsUrl] = useState(() => serviceUrl('tts'));
   const audioRef = useRef(null);
   const queueRef = useRef([]);
   const isPlayingRef = useRef(false);

@@ -41,6 +41,11 @@ from task_queue import get_task_queue
 from conversation import get_conversation_manager, detect_emotion, build_messages
 
 PIPER_VOICE_PATH = os.getenv('PIPER_VOICE', '')
+
+# Remote access: VERTHA_HOST=0.0.0.0 to listen beyond this machine, and
+# VERTHA_CORS_ORIGINS=http://my-laptop:5173,... for the page's origin(s).
+BIND_HOST = os.getenv('VERTHA_HOST', '127.0.0.1')
+CORS_ORIGINS = [o.strip() for o in os.getenv('VERTHA_CORS_ORIGINS', '').split(',') if o.strip()]
 PIPER_VOICE_DIR = os.getenv('PIPER_VOICE_DIR', str(Path(__file__).parent))
 
 LOG_DIR = Path(__file__).parent / 'logs'
@@ -194,7 +199,8 @@ app = FastAPI(title='Vertha TTS (Piper)', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex='https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?',
-    allow_methods=['GET', 'POST', 'OPTIONS'],
+    allow_origins=CORS_ORIGINS,
+    allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allow_headers=['*'],
 )
 
@@ -506,4 +512,4 @@ async def ws_broadcast_task_update(event_type: str, data: dict):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='info')
+    uvicorn.run(app, host=BIND_HOST, port=args.port, log_level='info')

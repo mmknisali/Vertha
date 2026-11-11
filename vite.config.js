@@ -34,6 +34,8 @@ export default defineConfig(({ mode }) => {
     emptyOutDir: true,
   },
   server: {
+    // Set VERTHA_DEV_HOST=0.0.0.0 to open the dev page from another machine.
+    host: process.env.VERTHA_DEV_HOST || 'localhost',
     port: 5173,
     proxy: {
       '/api/zen': {

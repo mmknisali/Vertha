@@ -13,6 +13,7 @@ import useTTS from './hooks/useTTS.js';
 import useWakeWord from './hooks/useWakeWord.js';
 import useWebSocket from './hooks/useWebSocket.js';
 import { getConfig, getSttUrl, getTtsUrl, isElectron } from './utils/config.js';
+import { serviceUrl } from './utils/endpoints.js';
 import { REMINDER_TOOLS, REMINDER_TOOL_NAMES, runReminderTool, reminderAlertText } from './utils/reminders.js';
 
 const MEMORY_TOOLS = [
@@ -168,7 +169,7 @@ export default function App() {
   }, [dangerousTier]);
 
   const [proactiveSuggestions, setProactiveSuggestions] = useState(true);
-  const [ttsUrl, setTtsUrl] = useState('http://localhost:8766');
+  const [ttsUrl, setTtsUrl] = useState(() => serviceUrl('tts'));
 
   useEffect(() => {
     async function initConfig() {

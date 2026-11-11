@@ -1,6 +1,8 @@
+import { serviceUrl } from './endpoints.js';
+
 const DEV_DEFAULTS = {
-  ttsUrl: 'http://localhost:8766',
-  sttUrl: 'http://localhost:8765',
+  ttsUrl: serviceUrl('tts'),
+  sttUrl: serviceUrl('stt'),
   zenApiKey: '',
   groqApiKey: '',
   locationLat: '37.0662',

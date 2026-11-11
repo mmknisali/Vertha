@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { serviceUrl } from '../utils/endpoints.js';
 
 import { getSttUrl } from '../utils/config.js';
 
@@ -25,7 +26,7 @@ export default function useSTT({ onTranscript, onError }) {
   const [status, setStatus] = useState('monitoring');
   const [interimVolume, setInterimVolume] = useState(0);
   const [transcript, setTranscript] = useState('');
-  const [sttUrl, setSttUrl] = useState('http://localhost:8765');
+  const [sttUrl, setSttUrl] = useState(() => serviceUrl('stt'));
   const [transcribeUrl, setTranscribeUrl] = useState(null);
 
   const configRef = useRef({ onTranscript, onError });
@@ -150,7 +151,7 @@ export default function useSTT({ onTranscript, onError }) {
   const transcribe = useCallback(async (blob) => {
     const fd = new FormData();
     fd.append('file', blob, 'audio.webm');
-    const url = transcribeUrl || 'http://localhost:8765/transcribe';
+    const url = transcribeUrl || `${serviceUrl('stt')}/transcribe`;
     const res = await fetch(url, { method: 'POST', body: fd });
     if (!res.ok) throw new Error(`STT ${res.status}`);
     const data = await res.json();

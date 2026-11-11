@@ -21,6 +21,11 @@ STD6_PATH = os.getenv('STD6_PATH', '/nix/store/chqq8mpmpyfi9kgsngya71akv5xicn03-
 LIBZ_PATH = os.getenv('LIBZ_PATH', '')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+
+# Remote access: VERTHA_HOST=0.0.0.0 to listen beyond this machine, and
+# VERTHA_CORS_ORIGINS=http://my-laptop:5173,... for the page's origin(s).
+BIND_HOST = os.getenv('VERTHA_HOST', '127.0.0.1')
+CORS_ORIGINS = [o.strip() for o in os.getenv('VERTHA_CORS_ORIGINS', '').split(',') if o.strip()]
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'whisper-large-v3-turbo')
 GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
@@ -77,7 +82,8 @@ app = FastAPI(title='Vertha STT', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex='https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?',
-    allow_methods=['GET', 'POST', 'OPTIONS'],
+    allow_origins=CORS_ORIGINS,
+    allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allow_headers=['*'],
 )
 
@@ -238,4 +244,4 @@ async def transcribe(file: UploadFile = File(...)):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='info')
+    uvicorn.run(app, host=BIND_HOST, port=args.port, log_level='info')

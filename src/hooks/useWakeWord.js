@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { serviceUrl } from '../utils/endpoints.js';
 
 import { getSttUrl } from '../utils/config.js';
 
@@ -8,7 +9,7 @@ const CHUNK_MS = 1000;
 export default function useWakeWord({ onWakeWord, enabled = true }) {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState(null);
-  const [sttUrl, setSttUrl] = useState('http://localhost:8765');
+  const [sttUrl, setSttUrl] = useState(() => serviceUrl('stt'));
   const [wakewordUrl, setWakewordUrl] = useState(null);
 
   const ref = useRef({
@@ -117,7 +118,7 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
         const wavBuffer = encodeWAV(samples, TARGET_SAMPLE_RATE);
 
         try {
-          const response = await fetch(wakewordUrl || 'http://localhost:8765/wakeword', {
+          const response = await fetch(wakewordUrl || `${serviceUrl('stt')}/wakeword`, {
             method: 'POST',
             body: wavBuffer,
             headers: { 'Content-Type': 'audio/wav' },
