@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -28,6 +29,7 @@ from memory import db as memory_db, embeddings as memory_embeddings
 from memory.router import router as memory_router, get_session_id, set_session_id, current_session_id
 from memory.search import router as search_router
 from routers.pc_control import router as pc_router
+from reminders import router as reminders_router, run_checker as run_reminder_checker
 
 from task_engine import TaskEngine, get_task_engine, set_task_engine
 from stream_parser import StreamParser, strip_tags_for_tts
@@ -172,7 +174,15 @@ async def lifespan(app):
 
     logger.info('Task engine initialized')
 
+    reminder_task = asyncio.create_task(
+        run_reminder_checker(
+            get_ws_manager().broadcast,
+            lambda: get_ws_manager().connection_count > 0,
+        )
+    )
+
     yield
+    reminder_task.cancel()
     sid = get_session_id()
     if sid:
         await memory_db.update_session_summary(sid, '[session ended]')
@@ -193,6 +203,7 @@ app.include_router(spotify_router)
 app.include_router(memory_router)
 app.include_router(search_router)
 app.include_router(pc_router)
+app.include_router(reminders_router)
 
 
 @app.get('/health')

@@ -13,6 +13,7 @@ import useTTS from './hooks/useTTS.js';
 import useWakeWord from './hooks/useWakeWord.js';
 import useWebSocket from './hooks/useWebSocket.js';
 import { getConfig, getSttUrl, getTtsUrl, isElectron } from './utils/config.js';
+import { REMINDER_TOOLS, REMINDER_TOOL_NAMES, runReminderTool, reminderAlertText } from './utils/reminders.js';
 
 const MEMORY_TOOLS = [
   { type: 'function', function: { name: 'pin_memory', description: 'Permanently remember an important fact about the user.', parameters: { type: 'object', properties: { content: { type: 'string' }, source: { type: 'string' } }, required: ['content'] } } },
@@ -40,6 +41,7 @@ const MEMORY_TOOLS = [
   { type: 'function', function: { name: 'file_write', description: 'Write content to a file, creating parent directories if needed.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file' }, content: { type: 'string', description: 'Content to write' }, encoding: { type: 'string', description: 'Encoding: utf-8 or base64 (default utf-8)' } }, required: ['path', 'content'] } } },
   { type: 'function', function: { name: 'file_delete', description: 'Delete a file or directory.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to delete' }, force: { type: 'boolean', description: 'Force delete directories (default false)' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'file_list', description: 'List contents of a directory.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path (default current dir)' } } } } },
+  ...REMINDER_TOOLS,
 ];
 
 const SYSTEM_PROMPT = `You are V.E.R.T.H.A. — Voice Enabled Reasoning and Task Handling Assistant. A personal AI built for one person.
@@ -109,6 +111,9 @@ ISSUES: anything that didn't go perfectly
 - file_write: Write content to file (path and content required)
 - file_delete: Delete file (path required, blocked on system dirs)
 - file_list: List directory contents (path defaults to .)
+- add_reminder: Set a reminder (text, and due as "in 30 minutes" or a local time)
+- list_reminders: Read open reminders
+- complete_reminder: Mark a reminder done (by id)
 
 ## What you never do
 - Never make up information — search or say you don't know
@@ -208,6 +213,11 @@ export default function App() {
     url: wsUrl,
     autoConnect: true,
     onMessage: (msg) => {
+      if (msg.type === 'reminder_due' && msg.data) {
+        const alert = reminderAlertText(msg.data);
+        setMessages((prev) => [...prev, { role: 'assistant', content: alert }]);
+        ttsRef.current?.speak(alert);
+      }
       if (msg.type === 'task_update' || msg.type === 'task_complete') {
         const { kind, step, tool, status: stepStatus, result, remaining, task_id } = msg;
 
@@ -682,6 +692,11 @@ export default function App() {
     const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
     setActiveTools((prev) => [...prev, name.toUpperCase()]);
 
+    if (REMINDER_TOOL_NAMES.includes(name)) {
+      const reply = await runReminderTool(ttsUrl, name, parsedArgs);
+      setActiveTools((prev) => prev.filter((t) => t !== name.toUpperCase()));
+      return reply;
+    }
     if (name === 'pin_memory') {
       await fetch(`${ttsUrl}/memory/pin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: parsedArgs.content, source: parsedArgs.source || 'user' }) });
       await fetchMemoryStats();
