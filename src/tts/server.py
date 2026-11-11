@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description='Vertha TTS Server')
 parser.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8766)))
 args = parser.parse_args()
 
+import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -67,6 +68,28 @@ logger.addHandler(fh)
 logger.addHandler(ch)
 
 voice = None
+
+
+# Voice out. TTS_ENGINE picks it: 'piper' (local, needs PIPER_VOICE), 'groq' (hosted, needs GROQ_API_KEY).
+# Unset: Piper if its voice file loads, otherwise Groq if the key is set, otherwise text only.
+TTS_ENGINE = (os.getenv('TTS_ENGINE') or '').strip().lower()
+GROQ_API_KEY = (os.getenv('GROQ_API_KEY') or '').strip()
+GROQ_SPEECH_URL = 'https://api.groq.com/openai/v1/audio/speech'
+GROQ_TTS_MODEL = os.getenv('GROQ_TTS_MODEL', 'canopylabs/orpheus-v1-english')
+GROQ_TTS_VOICE = os.getenv('GROQ_TTS_VOICE', 'troy')
+
+
+def voice_engine() -> str:
+    """'piper', 'groq', or '' for text only."""
+    if TTS_ENGINE == 'groq':
+        return 'groq' if GROQ_API_KEY else ''
+    if TTS_ENGINE == 'piper':
+        return 'piper' if voice else ''
+    if voice:
+        return 'piper'
+    if GROQ_API_KEY:
+        return 'groq'
+    return ''
 
 
 def load_voice():
@@ -214,15 +237,70 @@ app.include_router(reminders_router)
 
 @app.get('/health')
 async def health():
+    engine = voice_engine()
     return {
-        'status': 'ready' if voice else 'no_voice',
-        'engine': 'piper',
-        'voice': PIPER_VOICE_PATH,
+        'status': 'ready' if engine else 'no_voice',
+        'engine': engine or 'text',
+        'voice': bool(engine),
+        'voice_file': PIPER_VOICE_PATH,
     }
 
 
 class SpeakRequest(BaseModel):
     text: str
+
+
+def _join_wavs(parts: list[bytes], gap_seconds: float = 0.4) -> bytes:
+    """Join WAV parts into one WAV with a short pause between them."""
+    if len(parts) == 1:
+        return parts[0]
+    readers = [wave.open(io.BytesIO(p), 'rb') for p in parts]
+    try:
+        first = readers[0]
+        sample_rate, sample_width, channels = first.getframerate(), first.getsampwidth(), first.getnchannels()
+        silence = b'\x00' * (int(sample_rate * gap_seconds) * sample_width * channels)
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as w:
+            w.setsampwidth(sample_width)
+            w.setnchannels(channels)
+            w.setframerate(sample_rate)
+            for i, r in enumerate(readers):
+                w.writeframes(r.readframes(r.getnframes()))
+                if i < len(readers) - 1:
+                    w.writeframes(silence)
+        return out.getvalue()
+    finally:
+        for r in readers:
+            r.close()
+
+
+def _piper_wav(chunks: list[str]) -> bytes:
+    parts = []
+    for i, chunk in enumerate(chunks):
+        logger.info(f'  piper chunk {i+1}/{len(chunks)}: {len(chunk)} chars')
+        audio_bytes, sr, sw, ch = synthesize_to_wav(chunk)
+        parts.append(make_wav_bytes(audio_bytes, sr, sw, ch))
+    return _join_wavs(parts)
+
+
+async def _groq_wav(chunks: list[str]) -> bytes:
+    """Groq's hosted speech (env-chosen model and voice). Input is capped per request, so chunks go one by one."""
+    parts = []
+    headers = {'Authorization': f'Bearer {GROQ_API_KEY}'}
+    async with httpx.AsyncClient(timeout=60) as client:
+        for i, chunk in enumerate(chunks):
+            logger.info(f'  groq voice chunk {i+1}/{len(chunks)}: {len(chunk)} chars')
+            response = await client.post(
+                GROQ_SPEECH_URL,
+                json={'model': GROQ_TTS_MODEL, 'voice': GROQ_TTS_VOICE, 'input': chunk, 'response_format': 'wav'},
+                headers=headers,
+            )
+            if response.status_code in (401, 403):
+                raise RuntimeError('Groq rejected GROQ_API_KEY for voice out')
+            if response.status_code >= 400:
+                raise RuntimeError(f'Groq voice answered {response.status_code}')
+            parts.append(response.content)
+    return _join_wavs(parts)
 
 
 @app.post('/speak')
@@ -231,51 +309,28 @@ async def speak(req: SpeakRequest):
     if not text:
         return Response(content=b'', media_type='audio/wav')
 
-    if not voice:
+    engine = voice_engine()
+    if not engine:
         return JSONResponse(
-            {'error': 'No voice model loaded — check PIPER_VOICE path in src/tts/.env.local'},
-            status_code=503
+            {'error': 'Voice out is off: no voice is set. Set PIPER_VOICE to a Piper voice file, '
+                      'or TTS_ENGINE=groq with GROQ_API_KEY, in src/tts/.env.local and restart. '
+                      'Answers show as text until then.', 'voice': False},
+            status_code=503,
         )
 
-    logger.info(f'/speak: {len(text)} chars')
-
+    logger.info(f'/speak ({engine}): {len(text)} chars')
     try:
         chunks = split_text(text)
         logger.info(f'Split into {len(chunks)} chunk(s)')
-
-        wav_bytes_list = []
-        sample_rate = 22050
-        sample_width = 2
-        channels = 1
-
-        if len(chunks) == 1:
-            audio_bytes, sample_rate, sample_width, channels = synthesize_to_wav(chunks[0])
-            wav = make_wav_bytes(audio_bytes, sample_rate, sample_width, channels)
+        if engine == 'groq':
+            wav = await _groq_wav(chunks)
         else:
-            for i, chunk in enumerate(chunks):
-                logger.info(f'  chunk {i+1}/{len(chunks)}: {len(chunk)} chars')
-                audio_bytes, sr, sw, ch = synthesize_to_wav(chunk)
-                sample_rate, sample_width, channels = sr, sw, ch
-                wav = make_wav_bytes(audio_bytes, sr, sw, ch)
-                wav_bytes_list.append(wav)
-
-            silence_samples = int(sample_rate * 0.4)
-            silence = b'\x00\x00' * silence_samples
-            combined = io.BytesIO()
-            with wave.open(combined, 'wb') as w:
-                w.setsampwidth(sample_width)
-                w.setnchannels(channels)
-                w.setframerate(sample_rate)
-                for i, wb in enumerate(wav_bytes_list):
-                    with wave.open(io.BytesIO(wb), 'rb') as r:
-                        w.writeframes(r.readframes(r.getnframes()))
-                    if i < len(wav_bytes_list) - 1:
-                        w.writeframes(silence)
-            wav = combined.getvalue()
-
+            wav = _piper_wav(chunks)
         logger.info(f'Synthesized {len(wav)} bytes')
         return Response(content=wav, media_type='audio/wav')
-
+    except RuntimeError as e:
+        logger.error(f'Voice out ({engine}) failed: {e}')
+        return JSONResponse({'error': str(e)}, status_code=502)
     except Exception as e:
         logger.error(f'Synthesis error: {e}')
         import traceback

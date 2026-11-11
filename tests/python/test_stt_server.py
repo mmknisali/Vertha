@@ -43,7 +43,22 @@ class TestSTTServer:
         assert stt_server.args.port == 8765
 
     def test_groq_model_default(self):
-        assert stt_server.GROQ_MODEL == 'whisper-large-v3-turbo'
+        assert stt_server.GROQ_MODEL == 'whisper-large-v3'
+
+    def test_speech_engine_order_is_groq_then_openai(self):
+        with patch.object(stt_server, 'GROQ_API_KEY', 'g'), patch.object(stt_server, 'OPENAI_API_KEY', 'o'):
+            assert stt_server.speech_engines() == ['groq', 'openai']
+        with patch.object(stt_server, 'GROQ_API_KEY', ''), patch.object(stt_server, 'OPENAI_API_KEY', 'o'):
+            assert stt_server.speech_engines() == ['openai']
+        with patch.object(stt_server, 'GROQ_API_KEY', ''), patch.object(stt_server, 'OPENAI_API_KEY', ''):
+            assert stt_server.speech_engines() == []
+
+    def test_wake_phrase_matches_whole_words_and_keeps_the_command(self):
+        found, rest = stt_server.match_wake_phrase("Jarvis, what's the weather?", 'jarvis')
+        assert found is True
+        assert rest == "what's the weather"
+        assert stt_server.match_wake_phrase('javis open the door', 'jarvis') == (False, '')
+        assert stt_server.match_wake_phrase('hey Jarvis', 'hey jarvis') == (True, '')
 
     def test_groq_url(self):
         assert stt_server.GROQ_URL == 'https://api.groq.com/openai/v1/audio/transcriptions'
@@ -75,7 +90,25 @@ class TestTranscribeEndpoint:
                 '/transcribe',
                 files={'file': ('test.wav', b'audio', 'audio/wav')}
             )
-            assert response.status_code == 500
+            assert response.status_code == 503
+            assert 'GROQ_API_KEY' in response.json()['error']
+
+    def test_audio_extension_follows_browser_type(self):
+        assert stt_server.AUDIO_EXTENSIONS['audio/webm'] == 'webm'
+        assert stt_server.AUDIO_EXTENSIONS['audio/ogg'] == 'ogg'
+        assert stt_server.AUDIO_EXTENSIONS['audio/mp4'] == 'mp4'
+
+
+class TestWakeWordOptional:
+    def test_wakeword_off_by_default_in_test_env(self):
+        assert stt_server.WAKEWORD_ENABLED is False
+
+    def test_health_reports_speech_and_wakeword_state(self):
+        from fastapi.testclient import TestClient
+        client = TestClient(stt_server.app)
+        data = client.get('/health').json()
+        assert data['wakeword'] is False
+        assert data['speech_in'] is True
 
 
 class TestWakeWordEndpoint:

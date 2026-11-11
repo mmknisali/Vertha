@@ -9,6 +9,16 @@ const MAX_RECORDING_DURATION = parseInt(import.meta.env.VITE_MAX_RECORDING_DURAT
 const MIN_RECORDING_DURATION = 500;
 const NOISE_WORDS = ['um', 'uhhm', 'uh', 'hmm', 'mm'];
 
+// Names the app shows for the speech engine that is active.
+export const ENGINE_LABELS = {
+  groq: 'Groq Whisper',
+  openai: 'OpenAI Whisper',
+  browser: 'browser speech',
+};
+
+const BrowserSpeechRecognition =
+  typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+
 function stripNoiseWords(text) {
   const words = text.toLowerCase().split(/\s+/).filter(w => !NOISE_WORDS.includes(w));
   return words.join(' ');
@@ -28,6 +38,10 @@ export default function useSTT({ onTranscript, onError }) {
   const [transcript, setTranscript] = useState('');
   const [sttUrl, setSttUrl] = useState(() => serviceUrl('stt'));
   const [transcribeUrl, setTranscribeUrl] = useState(null);
+  // The engine that answered the last request, or the one the server will try first.
+  // 'browser' is the last resort when the server has no speech key at all.
+  const [engine, setEngine] = useState('browser');
+  const serverEnginesRef = useRef(null); // null = not checked yet
 
   const configRef = useRef({ onTranscript, onError });
   useEffect(() => {
@@ -39,6 +53,14 @@ export default function useSTT({ onTranscript, onError }) {
       const url = await getSttUrl();
       setSttUrl(url);
       setTranscribeUrl(`${url}/transcribe`);
+      try {
+        const res = await fetch(`${url}/health`);
+        const data = res.ok ? await res.json() : {};
+        serverEnginesRef.current = Array.isArray(data.speech_engines) ? data.speech_engines : [];
+      } catch (_) {
+        serverEnginesRef.current = [];
+      }
+      setEngine(serverEnginesRef.current[0] || 'browser');
     }
     initSttUrl();
   }, []);
@@ -62,6 +84,7 @@ export default function useSTT({ onTranscript, onError }) {
     const r = ref.current;
     if (r.rafId) { cancelAnimationFrame(r.rafId); r.rafId = null; }
     if (r.noSpeechTimer) { clearTimeout(r.noSpeechTimer); r.noSpeechTimer = null; }
+    if (r.browserRec) { try { r.browserRec.abort(); } catch (_) {} r.browserRec = null; }
     if (r.recorder && r.recorder.state !== 'inactive') {
       try { r.recorder.stop(); } catch (_) {}
     }
@@ -150,11 +173,17 @@ export default function useSTT({ onTranscript, onError }) {
 
   const transcribe = useCallback(async (blob) => {
     const fd = new FormData();
-    fd.append('file', blob, 'audio.webm');
+    // The blob keeps the browser's own type (webm/opus here), so the server sends it on unchanged.
+    fd.append('file', blob, blob.type.startsWith('audio/mp4') ? 'audio.mp4' : 'audio.webm');
     const url = transcribeUrl || `${serviceUrl('stt')}/transcribe`;
     const res = await fetch(url, { method: 'POST', body: fd });
-    if (!res.ok) throw new Error(`STT ${res.status}`);
+    if (!res.ok) {
+      // The speech server answers a missing or rejected key with a readable message.
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || `Speech in failed (${res.status})`);
+    }
     const data = await res.json();
+    if (data.engine) setEngine(data.engine);
     return (data.text || '').trim();
   }, [transcribeUrl]);
 
@@ -243,8 +272,84 @@ export default function useSTT({ onTranscript, onError }) {
     });
   }, [transcribe, playBeep]);
 
+  // Last resort: the browser's own recognition, used only when the server holds no speech key.
+  const startBrowserListening = useCallback(() => {
+    const r = ref.current;
+    if (!BrowserSpeechRecognition) {
+      configRef.current.onError?.('Speech in is off: no speech key on the server, and this browser has no built-in speech recognition');
+      return;
+    }
+    const rec = new BrowserSpeechRecognition();
+    rec.lang = navigator.language || 'en-US';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.continuous = false;
+    r.browserRec = rec;
+    r.mode = 'listening';
+    setEngine('browser');
+    setStatus('listening');
+    playBeep('activation');
+
+    let gotResult = false;
+    rec.onresult = (e) => {
+      gotResult = true;
+      const text = (e.results[0]?.[0]?.transcript || '').trim();
+      r.browserRec = null;
+      r.mode = 'monitoring';
+      setStatus('monitoring');
+      setTranscript(text);
+      if (text) configRef.current.onTranscript?.(text);
+      else playBeep('deactivation');
+    };
+    rec.onerror = (e) => {
+      r.browserRec = null;
+      r.mode = 'monitoring';
+      setStatus('monitoring');
+      if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        playBeep('error');
+        configRef.current.onError?.(`Browser speech failed: ${e.error}`);
+      }
+    };
+    rec.onend = () => {
+      if (!gotResult && r.browserRec === rec) {
+        r.browserRec = null;
+        r.mode = 'monitoring';
+        setStatus('monitoring');
+      }
+    };
+    try {
+      rec.start();
+    } catch (err) {
+      r.browserRec = null;
+      r.mode = 'monitoring';
+      setStatus('monitoring');
+      configRef.current.onError?.(`Browser speech failed: ${err.message}`);
+    }
+  }, [playBeep]);
+
+  // Asks the speech server which engines hold a key. An unreachable server counts as none.
+  const probeEngines = useCallback(async () => {
+    const base = (transcribeUrl || `${serviceUrl('stt')}/transcribe`).replace(/\/transcribe$/, '');
+    try {
+      const res = await fetch(`${base}/health`);
+      const data = res.ok ? await res.json() : {};
+      serverEnginesRef.current = Array.isArray(data.speech_engines) ? data.speech_engines : [];
+    } catch (_) {
+      serverEnginesRef.current = [];
+    }
+    return serverEnginesRef.current;
+  }, [transcribeUrl]);
+
   const startListeningMode = useCallback(async () => {
     const r = ref.current;
+    // Checked on every listen, so a server that came up late is used without a reload.
+    const engines = await probeEngines();
+    if (engines.length === 0) {
+      // Last resort: the browser's own recognition, when the server holds no speech key.
+      startBrowserListening();
+      return;
+    }
+    setEngine(engines[0]);
     try {
       await setupAudio();
     } catch (err) {
@@ -261,7 +366,10 @@ export default function useSTT({ onTranscript, onError }) {
     setStatus('listening');
     playBeep('activation');
 
-    const recorder = new MediaRecorder(r.stream, r.mimeType ? { mimeType: r.mimeType } : {});
+    // Native quality: the browser's own encoding at a high bitrate, sent without resampling.
+    const recorderOptions = { audioBitsPerSecond: 128000 };
+    if (r.mimeType) recorderOptions.mimeType = r.mimeType;
+    const recorder = new MediaRecorder(r.stream, recorderOptions);
     r.recorder = recorder;
 
     recorder.ondataavailable = (e) => {
@@ -306,6 +414,7 @@ export default function useSTT({ onTranscript, onError }) {
     transcript,
     interimVolume,
     startListening: () => startListeningMode(),
+    engine,
     startMonitoring,
     stopListening,
     stop,

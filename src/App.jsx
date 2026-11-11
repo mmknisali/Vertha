@@ -138,6 +138,14 @@ export default function App() {
   const [status, setStatus] = useState('monitoring');
   const [apiKey, setApiKey] = useState('');
   const [wakeWord, setWakeWord] = useState('Hey Vertha');
+  // What the servers report at start. Wake: 'model' (wake-word model), 'keyword' (phrase
+  // matched on the transcript) or 'push' (push-to-talk only, the default). Voice out is
+  // Piper or Groq; when neither is set, answers are text and the page says so.
+  const [wakeMode, setWakeMode] = useState('push');
+  const [wakePhrase, setWakePhrase] = useState('jarvis');
+  const [voiceOutOn, setVoiceOutOn] = useState(true);
+  // null = not checked yet; true/false = whether the server holds ZEN_API_KEY.
+  const [zenServerKey, setZenServerKey] = useState(null);
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [interimText, setInterimText] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -184,12 +192,52 @@ export default function App() {
     initConfig();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function probeServices() {
+      const sttBase = await getSttUrl();
+      const ttsBase = await getTtsUrl();
+      try {
+        const r = await fetch(`${sttBase}/health`);
+        if (r.ok) {
+          const d = await r.json();
+          if (!cancelled) {
+            setWakeMode(d.wakeword ? 'model' : (d.wake_keyword ? 'keyword' : 'push'));
+            setWakePhrase(d.wake_phrase || 'jarvis');
+          }
+        }
+      } catch (_) { /* speech server not reachable; push-to-talk still works (browser speech) */ }
+      try {
+        const r = await fetch(`${ttsBase}/health`);
+        if (r.ok) {
+          const d = await r.json();
+          if (!cancelled) setVoiceOutOn(Boolean(d.voice));
+        }
+      } catch (_) { /* voice server not reachable; answers still show as text */ }
+      try {
+        const r = await fetch('/api/vertha/zen-status');
+        if (r.ok) {
+          const d = await r.json();
+          if (!cancelled) setZenServerKey(Boolean(d.configured));
+        }
+      } catch (_) { /* not the dev server; the settings key still works */ }
+    }
+    probeServices();
+    return () => { cancelled = true; };
+  }, []);
+
   const wakeWordHook = useWakeWord({
-    enabled: status === 'monitoring',
-    onWakeWord: () => {
+    enabled: status === 'monitoring' && wakeMode !== 'push',
+    mode: wakeMode === 'push' ? 'off' : wakeMode,
+    onWakeWord: ({ command } = {}) => {
       if (status === 'speaking') return;
       playBeep('activation');
       setInterimText('');
+      if (command) {
+        // "jarvis what's the weather" carries the command in the same window.
+        finalizeCommand(command);
+        return;
+      }
       setStatus('listening');
     },
   });
@@ -269,10 +317,11 @@ export default function App() {
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
 
-  const snap = useRef({ status, apiKey, wakeWord, messages });
+  const snap = useRef({ status, apiKey, wakeWord, messages, zenServerKey });
 
   snap.current.status = status;
   snap.current.apiKey = apiKey;
+  snap.current.zenServerKey = zenServerKey;
   snap.current.wakeWord = wakeWord;
   snap.current.messages = messages;
 
@@ -460,9 +509,9 @@ export default function App() {
   };
 
   const callAI = async (userText) => {
-    if (!snap.current.apiKey) {
+    if (!snap.current.apiKey && snap.current.zenServerKey !== true) {
       setStatus('error');
-      setErrorMsg('Enter your API key in settings');
+      setErrorMsg('AI answers need the Zen key: set ZEN_API_KEY on the server and restart it, or add it in settings');
       return;
     }
 
@@ -505,7 +554,11 @@ export default function App() {
         body: JSON.stringify({ model: 'big-pickle', messages: contextMessages, tools: MEMORY_TOOLS }),
       });
 
-      if (!res.ok) throw new Error(`API ${res.status}`);
+      if (!res.ok) {
+        // The dev proxy answers a missing key with a readable error in JSON.
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `AI answer failed (${res.status}). Check the Zen key.`);
+      }
       const data = await res.json();
       let text = data.choices?.[0]?.message?.content;
       const toolCalls = data.choices?.[0]?.message?.tool_calls || [];
@@ -894,6 +947,10 @@ export default function App() {
         onManualTrigger={manualTrigger}
         emotion={emotion}
         taskProgress={activeTask?.progress}
+        wakeMode={wakeMode}
+        wakePhrase={wakePhrase}
+        voiceOutOn={voiceOutOn}
+        speechEngine={stt.engine}
       />
 
       <RightPanel

@@ -5,12 +5,19 @@ import { getSttUrl } from '../utils/config.js';
 
 const TARGET_SAMPLE_RATE = 16000;
 const CHUNK_MS = 1000;
+// Keyword mode: each window is one speech request. The window is WINDOW_MS long and
+// slides by STEP_MS, so a phrase cut at one edge is whole in the next window.
+const KEYWORD_WINDOW_MS = parseInt(import.meta.env.VITE_KEYWORD_WINDOW_MS || '4000', 10) || 4000;
+const KEYWORD_STEP_MS = parseInt(import.meta.env.VITE_KEYWORD_STEP_MS || '3000', 10) || 3000;
 
-export default function useWakeWord({ onWakeWord, enabled = true }) {
+// mode: 'model' = the optional wake-word model (POST /wakeword, 16 kHz chunks),
+//       'keyword' = wake phrase matched on the speech engine's transcript (POST /wake/keyword),
+//       'off' = nothing listens in the background (push-to-talk only).
+// onWakeWord receives { command }: what was said after the phrase, if anything.
+export default function useWakeWord({ onWakeWord, enabled = true, mode = 'model' }) {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState(null);
   const [sttUrl, setSttUrl] = useState(() => serviceUrl('stt'));
-  const [wakewordUrl, setWakewordUrl] = useState(null);
 
   const ref = useRef({
     stream: null,
@@ -19,13 +26,14 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
     monitorInterval: null,
     pcmBuffer: [],
     mediaStreamSource: null,
+    windowSamples: null,
+    inFlight: false,
   });
 
   useEffect(() => {
     async function initSttUrl() {
       const url = await getSttUrl();
       setSttUrl(url);
-      setWakewordUrl(`${url}/wakeword`);
     }
     initSttUrl();
   }, []);
@@ -53,14 +61,19 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
       r.stream = null;
     }
     r.pcmBuffer = [];
+    r.windowSamples = null;
+    r.inFlight = false;
   }, []);
 
   const onWakeWordRef = useRef(onWakeWord);
   onWakeWordRef.current = onWakeWord;
+  const sttUrlRef = useRef(sttUrl);
+  sttUrlRef.current = sttUrl;
 
   const startListening = useCallback(async () => {
     const r = ref.current;
     if (r.stream) return;
+    if (mode === 'off') return;
 
     try {
       r.stream = await navigator.mediaDevices.getUserMedia({
@@ -93,62 +106,111 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
       r.mediaStreamSource.connect(r.scriptProcessor);
       r.scriptProcessor.connect(r.audioCtx.destination);
 
-      const samplesPerChunk = Math.floor(nativeRate * (CHUNK_MS / 1000));
-      console.log('[WakeWord] Expected samples per chunk:', samplesPerChunk);
-
-      r.monitorInterval = setInterval(async () => {
-        if (r.pcmBuffer.length < samplesPerChunk) {
-          return;
-        }
-
-        let samples = new Float32Array(r.pcmBuffer.splice(0, samplesPerChunk));
-
-        if (nativeRate !== TARGET_SAMPLE_RATE) {
-          const ratio = nativeRate / TARGET_SAMPLE_RATE;
-          const targetLength = Math.floor(samples.length / ratio);
-          const resampled = new Float32Array(targetLength);
-          for (let i = 0; i < targetLength; i++) {
-            const srcIdx = Math.floor(i * ratio);
-            resampled[i] = samples[srcIdx];
-          }
-          samples = resampled;
-          console.log(`[WakeWord] Resampled from ${nativeRate} to ${TARGET_SAMPLE_RATE}: ${resampled.length} samples`);
-        }
-
-        const wavBuffer = encodeWAV(samples, TARGET_SAMPLE_RATE);
-
-        try {
-          const response = await fetch(wakewordUrl || `${serviceUrl('stt')}/wakeword`, {
-            method: 'POST',
-            body: wavBuffer,
-            headers: { 'Content-Type': 'audio/wav' },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            console.log('[WakeWord] Response:', data);
-            if (data.detected) {
-              console.log('[WakeWord] DETECTED!');
-              onWakeWordRef.current?.();
-            }
-          } else {
-            const text = await response.text().catch(() => '');
-            console.error(`Wake word endpoint error: ${response.status} ${text}`);
-          }
-        } catch (err) {
-          console.error('Wake word detection error:', err);
-        }
-      }, CHUNK_MS);
+      if (mode === 'keyword') {
+        startKeywordLoop(r, nativeRate);
+      } else {
+        startModelLoop(r, nativeRate);
+      }
 
       setIsListening(true);
       setError(null);
-      console.log('[WakeWord] Started successfully');
+      console.log(`[WakeWord] Started (${mode})`);
     } catch (err) {
       console.error('Wake word initialization error:', err);
       setError(err.message);
       cleanup();
     }
-  }, [cleanup]);
+    // startKeywordLoop and startModelLoop are plain functions below; they use only refs.
+  }, [cleanup, mode]);
+
+  function startModelLoop(r, nativeRate) {
+    const samplesPerChunk = Math.floor(nativeRate * (CHUNK_MS / 1000));
+    console.log('[WakeWord] Expected samples per chunk:', samplesPerChunk);
+
+    r.monitorInterval = setInterval(async () => {
+      if (r.pcmBuffer.length < samplesPerChunk) {
+        return;
+      }
+
+      let samples = new Float32Array(r.pcmBuffer.splice(0, samplesPerChunk));
+
+      if (nativeRate !== TARGET_SAMPLE_RATE) {
+        const ratio = nativeRate / TARGET_SAMPLE_RATE;
+        const targetLength = Math.floor(samples.length / ratio);
+        const resampled = new Float32Array(targetLength);
+        for (let i = 0; i < targetLength; i++) {
+          const srcIdx = Math.floor(i * ratio);
+          resampled[i] = samples[srcIdx];
+        }
+        samples = resampled;
+      }
+
+      const wavBuffer = encodeWAV(samples, TARGET_SAMPLE_RATE);
+
+      try {
+        const response = await fetch(`${sttUrlRef.current}/wakeword`, {
+          method: 'POST',
+          body: wavBuffer,
+          headers: { 'Content-Type': 'audio/wav' },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.detected) {
+            console.log('[WakeWord] DETECTED (model)');
+            onWakeWordRef.current?.({ command: '' });
+          }
+        } else {
+          const text = await response.text().catch(() => '');
+          console.error(`Wake word endpoint error: ${response.status} ${text}`);
+        }
+      } catch (err) {
+        console.error('Wake word detection error:', err);
+      }
+    }, CHUNK_MS);
+  }
+
+  function startKeywordLoop(r, nativeRate) {
+    const windowLen = Math.floor(nativeRate * (KEYWORD_WINDOW_MS / 1000));
+    const stepLen = Math.floor(nativeRate * (KEYWORD_STEP_MS / 1000));
+    const overlapLen = windowLen - stepLen;
+    r.windowSamples = new Float32Array(0);
+
+    r.monitorInterval = setInterval(async () => {
+      if (r.inFlight || r.pcmBuffer.length < stepLen) return;
+
+      // Fresh audio joins the tail of the last window; the window is sent at native rate.
+      const fresh = Float32Array.from(r.pcmBuffer.splice(0, stepLen));
+      const joined = new Float32Array(r.windowSamples.length + fresh.length);
+      joined.set(r.windowSamples, 0);
+      joined.set(fresh, r.windowSamples.length);
+      const window = joined.length > windowLen ? joined.slice(joined.length - windowLen) : joined;
+      r.windowSamples = window.slice(Math.max(0, window.length - overlapLen));
+
+      r.inFlight = true;
+      try {
+        const response = await fetch(`${sttUrlRef.current}/wake/keyword`, {
+          method: 'POST',
+          body: encodeWAV(window, nativeRate),
+          headers: { 'Content-Type': 'audio/wav' },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.detected) {
+            console.log('[WakeWord] DETECTED (keyword)');
+            onWakeWordRef.current?.({ command: data.command || '' });
+          }
+        } else {
+          const body = await response.json().catch(() => ({}));
+          console.error('Keyword wake error:', response.status, body.error || '');
+        }
+      } catch (err) {
+        console.error('Keyword wake request error:', err);
+      } finally {
+        r.inFlight = false;
+      }
+    }, KEYWORD_STEP_MS);
+  }
 
   const stopListening = useCallback(() => {
     cleanup();
@@ -156,13 +218,13 @@ export default function useWakeWord({ onWakeWord, enabled = true }) {
   }, [cleanup]);
 
   useEffect(() => {
-    if (enabled) {
+    if (enabled && mode !== 'off') {
       startListening();
     } else {
       stopListening();
     }
     return cleanup;
-  }, [enabled, startListening, stopListening, cleanup]);
+  }, [enabled, mode, startListening, stopListening, cleanup]);
 
   return {
     isListening,
