@@ -1,6 +1,11 @@
 import subprocess
 import asyncio
+import os
+import shutil
+import sys
+import tempfile
 from enum import Enum
+from pathlib import Path
 
 
 class PermissionTier(Enum):
@@ -119,13 +124,15 @@ class PCController:
         return f"System uptime: {uptime}. Memory: {memory_clean}. Current time: {time_result}."
 
     async def get_focused_window(self) -> str:
-        result = subprocess.run(
-            ["xdotool", "getwindowname", "$(xdotool getactivewindow)"],
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        return result.stdout.strip() or "Unknown"
+        if not shutil.which("xdotool"):
+            return "Reading the focused window needs xdotool, which is only available on Linux (X11)."
+        # Two plain calls: the window id from one feeds the name lookup.
+        active = subprocess.run(["xdotool", "getactivewindow"], capture_output=True, text=True)
+        window_id = active.stdout.strip()
+        if active.returncode != 0 or not window_id:
+            return "Unknown"
+        name = subprocess.run(["xdotool", "getwindowname", window_id], capture_output=True, text=True)
+        return name.stdout.strip() or "Unknown"
 
     async def get_screen_resolution(self) -> str:
         result = subprocess.run(
@@ -176,21 +183,32 @@ class PCController:
             ])
         return f"Scrolled {'up' if delta > 0 else 'down'}"
 
-    async def screenshot(self, path: str = "/tmp/vertha_ss.png") -> str:
-        subprocess.run([
-            "import", "-window", "root", path
-        ])
+    async def screenshot(self, path: str = os.path.join(tempfile.gettempdir(), "vertha_ss.png")) -> str:
+        if not shutil.which("import"):
+            return "Screenshots need ImageMagick's import command, which isn't installed here."
+        done = subprocess.run(["import", "-window", "root", path], capture_output=True)
+        if done.returncode != 0:
+            return "The screenshot failed."
         return f"Screenshot saved to {path}"
 
     async def set_volume(self, level: int) -> str:
-        subprocess.run([
-            "amixer", "-D", "pulse",
-            "sset", "Master", f"{level}%"
-        ])
+        if not shutil.which("amixer"):
+            return "Volume control needs amixer, which is only set up for Linux (PulseAudio) here."
+        done = subprocess.run(["amixer", "-D", "pulse", "sset", "Master", f"{level}%"], capture_output=True)
+        if done.returncode != 0:
+            return "I couldn't change the volume."
         return f"Volume set to {level}%"
 
     async def lock_screen(self) -> str:
-        subprocess.Popen(["xdg-screensaver", "lock"])
+        if sys.platform == "win32":
+            command = ["rundll32.exe", "user32.dll,LockWorkStation"]
+        elif sys.platform == "darwin":
+            command = ["pmset", "displaysleepnow"]
+        else:
+            command = ["xdg-screensaver", "lock"]
+        if not shutil.which(command[0]):
+            return "I can't lock the screen on this system."
+        subprocess.Popen(command)
         return "Screen locked"
 
     async def run_command(self, command: str) -> str:
@@ -228,11 +246,24 @@ class PCController:
         for blocked in BLOCKED_PATHS:
             if path.startswith(blocked):
                 return f"Cannot delete system path: {path}"
-        subprocess.run(["rm", "-i", path])
+        target = Path(path).expanduser()
+        # Path.unlink works the same on every OS; rm -i would sit waiting for a
+        # confirmation that nothing here can answer.
+        if target.is_dir():
+            return f"{path} is a folder; I only delete single files."
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            return f"No file called {path}."
         return f"Deleted {path}"
 
     async def kill_process(self, name: str) -> str:
-        subprocess.run(["pkill", "-f", name])
+        if sys.platform == "win32":
+            done = subprocess.run(["taskkill", "/IM", name, "/F"], capture_output=True)
+        else:
+            done = subprocess.run(["pkill", "-f", name], capture_output=True)
+        if done.returncode != 0:
+            return f"No running process matched {name}."
         return f"Killed {name}"
 
     async def modify_system_settings(self, setting: str, value: str) -> str:

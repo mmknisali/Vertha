@@ -1,5 +1,5 @@
 import os
-import subprocess
+import shutil
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -20,8 +20,7 @@ async def pc_health():
     tools = ["xdotool", "wmctrl", "xdpyinfo", "import", "amixer"]
     results = {}
     for tool in tools:
-        r = subprocess.run(["which", tool], capture_output=True)
-        results[tool] = r.returncode == 0
+        results[tool] = shutil.which(tool) is not None
     all_present = all(results.values())
     return {
         "pc_control_enabled": PC_CONTROL_ENABLED,
