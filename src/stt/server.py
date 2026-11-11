@@ -340,6 +340,15 @@ async def transcribe(file: UploadFile = File(...)):
     content_type = (file.content_type or 'audio/webm').split(';')[0].strip().lower()
     logger.info(f'/transcribe: {len(content)} bytes, type={content_type}')
 
+    if not speech_engines():
+        # Say why before anything else: a missing key is the answer, whatever the audio is.
+        return JSONResponse(
+            {'error': 'Speech in is off: no speech key is set on the speech server. Add GROQ_API_KEY '
+                      '(or OPENAI_API_KEY) to src/stt/.env.local and restart it. The app falls back to browser speech.',
+             'engine': None},
+            status_code=503,
+        )
+
     if len(content) < MIN_AUDIO_SIZE:
         logger.info(f'Audio too small ({len(content)} bytes), skipping')
         return {'text': '', 'engine': None}
